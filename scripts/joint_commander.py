@@ -16,7 +16,7 @@ class JointCommander(Node):
             group_name="ar_manipulator",
         )
         
-        self.moveit2.max_velocity = 0.5
+        self.moveit2.max_velocity = 0.75
         self.moveit2.max_acceleration = 0.5
         
         self.get_logger().info("Joint commander initialized. Ready to accept commands.")

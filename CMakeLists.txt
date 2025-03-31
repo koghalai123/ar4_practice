@@ -29,6 +29,8 @@ install(
 )
 install (PROGRAMS 
   scripts/joint_commander.py
+  scripts/movement_commander.py
+  scripts/movement_reader.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()
