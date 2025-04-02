@@ -1,7 +1,10 @@
 # Installation instructions
 mkdir -p ~/ar4_ws/src
+
 cd ~/ar4_ws/src
+
 git clone https://github.com/ycheng517/ar4_ros_driver
+
 git clone https://github.com/ycheng517/ar4_hand_eye_calibration
 git clone https://github.com/koghalai123/ROS2Practice
 source /opt/ros/jazzy/setup.bash
