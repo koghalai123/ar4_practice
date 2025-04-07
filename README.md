@@ -18,7 +18,9 @@ sudo apt install ros-jazzy-librealsense2* ros-jazzy-realsense2-*
 sudo apt update && rosdep install --from-paths . --ignore-src -y
 
 cd ~/ar4_ws
+
 colcon build
+
 source install/setup.bash
 
 
