@@ -7,7 +7,7 @@ git clone https://github.com/ycheng517/ar4_ros_driver
 
 git clone https://github.com/ycheng517/ar4_hand_eye_calibration
 
-git clone https://github.com/koghalai123/ROS2Practice
+https://github.com/koghalai123/ar4_practice
 
 source /opt/ros/jazzy/setup.bash
 
