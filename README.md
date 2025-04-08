@@ -28,17 +28,26 @@ Install VS Code(not Visual Studio, you need Visual Studio Code). Install Windows
 
 sudo usermod -aG docker $USER
 
-sudo docker build -t ar4_ros2_vscode .
-
-sudo docker run -it ar4_ros2_vscode
+sudo docker build -t ar4_sim .
 
 Now change permissions and restart your terminal:
 
-sudo usermod -aG docker $USER
+sudo apt update
 
-sudo systemctl status docker
+sudo apt install x11-xserver-utils mesa-utils
 
-sudo reboot
+xhost +local:docker
+
+docker run -it --rm \
+  -p 8080:8080 \
+  -p 11345:11345 \
+  -p 6080:6080 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -e DISPLAY=$DISPLAY \
+  -v "$HOME/.Xauthority:/root/.Xauthority:rw" \
+  -e QT_X11_NO_MITSHM=1 \
+  --privileged \
+  ar4_sim
 
 Your terminal windows should have closed. Give it a few minutes to restart(I have had to give it about 5 minutes for VS Code to work, even though ). Next, open up a new WSL terminal instance. A Docker container is available, but you may have issues opening and working with it, so you can open a VS Code instance fully within WSL, rather than a VS Code instance on Windows with a WSL terminal
 
