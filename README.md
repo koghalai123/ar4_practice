@@ -23,6 +23,13 @@ colcon build
 
 source install/setup.bash
 
+# To give actual commands to the physical robot(each in its own terminal window): 
+ros2 launch annin_ar4_driver driver.launch.py calibrate:=True include_gripper:=True
+
+ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
+
+ros2 run ar4_practice joint_commander.py
+
 
 
 # To give commands for gazebo simulation(each in its own terminal window): 
