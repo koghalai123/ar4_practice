@@ -1,6 +1,12 @@
 # Installation instructions
 
-Make sure ROS 2 Jazzy, Moveit2(for Jazzy), and Gazebo Sim 
+Make sure ROS 2 Jazzy(https://docs.ros.org/en/jazzy/Installation/Alternatives/Ubuntu-Development-Setup.html), Moveit2(for Jazzy), and Gazebo Sim(Harmonic) are installed. To install ROS 2, you need to go to the provided link and install it. For the other two, the following commands work.
+
+sudo apt install ros-jazzy-moveit
+
+sudo apt-get install ros-${ROS_DISTRO}-ros-gz
+
+Next, set up a workspace and get necessary code installed:
 
 mkdir -p ~/ar4_ws/src
 
