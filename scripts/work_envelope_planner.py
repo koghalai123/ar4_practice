@@ -7,7 +7,10 @@ from moveit_msgs.msg import MoveItErrorCodes
 from trajectory_msgs.msg import JointTrajectory
 from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion
 from pymoveit2 import MoveIt2
-
+import debugpy
+import asyncio
+#debugpy.listen(("localhost", 5678))
+#debugpy.wait_for_client() 
 class WorkEnvelopePlanner(Node):
     def __init__(self):
         super().__init__('work_envelope_planner')
@@ -31,20 +34,40 @@ class WorkEnvelopePlanner(Node):
                                               1)
         
         self.get_logger().info("Work Envelope Planner ready")
-
-    def check_reachability_callback(self, pose):
+    async def check_reachability_callback(self, pose):
+        try:
+            pose_goal = PoseStamped()
+            pose_goal.header.frame_id = "base_link"
+            pose_goal.pose = pose
+            
+            try:
+                # Wait for planning with timeout
+                await asyncio.wait_for(
+                    self.moveit2.plan_async(pose=pose_goal),
+                    timeout=0.5
+                )
+                self.get_logger().info('Planning succeeded')
+            except asyncio.TimeoutError:
+                self.get_logger().warn('Planning timed out')
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in reachability check: {str(e)}")
+    """def check_reachability_callback(self, pose):
         try:
             
             pose_goal = PoseStamped()
             pose_goal.header.frame_id = "base_link"
             pose_goal.pose = pose
-
+            position = pose.position
+            quat_xyzw = pose.orientation
+            #debugpy.breakpoint()
+            #self.moveit2.compute_ik(position=position, quat_xyzw=quat_xyzw)
             self.moveit2.plan(pose=pose_goal)
             #self.moveit2.wait_until_executed()
             self.get_logger().info('Received: ')
                 
         except Exception as e:
-            self.get_logger().error(f"Error in reachability check: {str(e)}")
+            self.get_logger().error(f"Error in reachability check: {str(e)}")"""
             
 
 def main(args=None):
