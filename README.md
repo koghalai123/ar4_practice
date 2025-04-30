@@ -28,6 +28,8 @@ sudo apt update && rosdep install --from-paths . --ignore-src -y
 
 cd ~/ar4_ws
 
+rosdep install --from-paths . --ignore-src -r -y
+
 colcon build
 
 source install/setup.bash
