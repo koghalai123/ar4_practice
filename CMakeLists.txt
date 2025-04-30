@@ -31,6 +31,8 @@ install (PROGRAMS
   scripts/joint_commander.py
   scripts/movement_commander.py
   scripts/movement_reader.py
+  scripts/work_envelope_planner.py
+  scripts/work_envelope_analyzer.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()
