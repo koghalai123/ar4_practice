@@ -2,12 +2,14 @@
 
 import rclpy
 from rclpy.node import Node
-from pymoveit2 import MoveIt2
 from geometry_msgs.msg import Point, Quaternion, Pose, PoseStamped
 import argparse
 from tf_transformations import quaternion_from_euler, euler_from_quaternion  # Import for Euler/Quaternion conversion
 import os
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory 
+from ament_index_python.packages import get_package_prefix
+from pymoveit2 import MoveIt2
+
 
 class MoveItCommander(Node):
     def __init__(self, use_joint_positions):
@@ -84,9 +86,8 @@ class MoveItCommander(Node):
         try:
             # Get the package share directory (installed directory)
             package_share_dir = get_package_share_directory('ar4_practice')
-            
             # Construct the full path to the file in the scripts folder (installed directory)
-            file_path = os.path.join(package_share_dir, '..', 'scripts', filename)
+            file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(package_share_dir)))), 'src','ar4_practice','scripts',filename)
             
             # If the file is not found in the installed directory, check the source directory
             if not os.path.isfile(file_path):
@@ -146,7 +147,7 @@ def main(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--joint', action='store_true', help='Use joint position control')
     parser.add_argument('--pose', action='store_true', help='Use Cartesian pose control')
-    parser.add_argument('--file', type=str, help='File containing commands (one per line)')
+    parser.add_argument('--file', default = 'commands.txt' ,type=str, help='File containing commands (one per line)')
     args = parser.parse_args()
     
     use_joint_positions = args.joint or not args.pose
