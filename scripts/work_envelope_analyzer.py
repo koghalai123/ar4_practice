@@ -12,6 +12,10 @@ from threading import Thread
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import Bool  # Add this import at the top
 from pymoveit2 import MoveIt2
+import os 
+from ament_index_python.packages import get_package_prefix
+import csv
+
 
 class WorkEnvelopeAnalyzer(Node):
     def __init__(self):
@@ -46,24 +50,36 @@ class WorkEnvelopeAnalyzer(Node):
             return True
 
     def generate_grid(self):
-        # Extract the current pose from the message
         current_pose = self.moveit2.compute_fk()
         self.current_position = current_pose
         positionObj = self.current_position.pose.position
         position = np.array([positionObj.x, positionObj.y, positionObj.z])
-        # Generate a grid of points around the current pose
-        grid_length = 0.4
-        grid_resolution = 0.05
-        num_samples = int(np.ceil(grid_length * 2 / grid_resolution))
-        x = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
-        y = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
-        z = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
-        
-        # Create 3D grid using meshgrid
-        xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
-        self.xx = xx.flatten()
-        self.yy = yy.flatten()
-        self.zz = zz.flatten()
+        # Extract the current pose from the message
+        if self.grid_file is not None:
+            input_file = os.path.join(os.path.dirname(os.path.dirname(get_package_prefix('ar4_practice'))),'src','ar4_practice', self.grid_file)
+            if os.path.isfile(input_file):
+                data = np.genfromtxt(input_file, delimiter=',', comments='#')
+                points = np.column_stack((data[1:,0], data[1:,1],data[1:,2]))
+                self.xx = data[1:,0]
+                self.yy = data[1:,1]
+                self.zz = data[1:,2]
+            else:
+                self.get_logger().error(f"File not found in source directory: {input_file}")
+        else:
+            
+            # Generate a grid of points around the current pose
+            grid_length = 0.75
+            grid_resolution = 0.1
+            num_samples = int(np.ceil(grid_length * 2 / grid_resolution))+1
+            x = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
+            y = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
+            z = np.linspace(position[0]-grid_length, position[0]+grid_length, num_samples)
+            
+            # Create 3D grid using meshgrid
+            xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+            self.xx = xx.flatten()
+            self.yy = yy.flatten()
+            self.zz = zz.flatten()
     #def save_results(self, msg):
     def save_current_position(self,msg):
         self.current_position = msg
@@ -77,6 +93,8 @@ def main(args=None):
     rclpy.init(args=args)
     
     analyzer = WorkEnvelopeAnalyzer()
+    analyzer.grid_file = None
+    analyzer.grid_file = 'boundary_samples3.csv'
     analyzer.generate_grid()
     from geometry_msgs.msg import Point, Quaternion
 
@@ -103,16 +121,16 @@ def main(args=None):
     
     analyzer.get_logger().info(f"Saved results")
     # Start analysis in a separate thread to avoid blocking
-    analysis_thread = Thread(target=analyzer.analyze_work_envelope, 
-                           kwargs={'grid_size': 0.1, 'max_distance': 0.5})
-    analysis_thread.start()
+    #analysis_thread = Thread(target=analyzer.analyze_work_envelope, 
+                           #kwargs={'grid_size': 0.1, 'max_distance': 0.5})
+    #analysis_thread.start()
     
-    try:
-        rclpy.spin(analyzer)
-    except KeyboardInterrupt:
-        analyzer.get_logger().info("Shutting down...")
     
-    analysis_thread.join()
+    #rclpy.spin(analyzer)
+
+    #analyzer.get_logger().info("Shutting down...")
+    print("Shutting down...")
+    #analysis_thread.join()
     
 if __name__ == "__main__":
     main()
