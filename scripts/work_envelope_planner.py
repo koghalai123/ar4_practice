@@ -9,70 +9,74 @@ from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion
 from pymoveit2 import MoveIt2
 import debugpy
 import asyncio
+from rclpy.callback_groups import ReentrantCallbackGroup
+from tf_transformations import quaternion_from_euler, euler_from_quaternion  # Import for Euler/Quaternion conversion
+from std_msgs.msg import Bool  # Add this import at the top
+
 #debugpy.listen(("localhost", 5678))
 #debugpy.wait_for_client() 
-class WorkEnvelopePlanner(Node):
+
+class MoveItCommander(Node):
     def __init__(self):
-        super().__init__('work_envelope_planner')
+        super().__init__("moveit_commander")
+        # Use ReentrantCallbackGroup for async operations
+        self.callback_group = ReentrantCallbackGroup()
         
-        # Initialize MoveIt2 interface
-        
+        # Initialize MoveIt2 with the callback group
         self.moveit2 = MoveIt2(
             node=self,
             joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"],
             base_link_name="base_link",
             end_effector_name="link_6",
             group_name="ar_manipulator",
+            callback_group=self.callback_group
         )
         
-        # Service to check reachability
-        self.subscription = self.create_subscription(Pose,
-                                                     "/check_reachability",
-                                                     self.check_reachability_callback,
-                                                     1)
-        self.pose_pub = self.create_publisher(PoseStamped, "/cal_marker_pose",
-                                              1)
-        
+        # Create subscription with the callback group
+        self.reachability_subscription = self.create_subscription(
+            Pose,
+            "/check_reachability",
+            self.check_reachability_callback,
+            1,
+            callback_group=self.callback_group
+        )
+
+        self.reachability_publisher = self.create_publisher(Bool, "/reachability_result",1)
+
+        self.current_pose = self.create_publisher(PoseStamped, "/get_current_pose",1)
+
+        timer_period = 0.5  # seconds
+        self.timer = self.create_timer(timer_period, self.get_current_pose,callback_group=self.callback_group)
+
+
+        self.moveit2.max_velocity = 0.75
+        self.moveit2.max_acceleration = 0.5
+        self.use_joint_positions = 0
         self.get_logger().info("Work Envelope Planner ready")
-    async def check_reachability_callback(self, pose):
-        try:
+    def check_reachability_callback(self, pose):
             pose_goal = PoseStamped()
             pose_goal.header.frame_id = "base_link"
             pose_goal.pose = pose
             
-            try:
-                # Wait for planning with timeout
-                await asyncio.wait_for(
-                    self.moveit2.plan_async(pose=pose_goal),
-                    timeout=0.5
-                )
-                self.get_logger().info('Planning succeeded')
-            except asyncio.TimeoutError:
-                self.get_logger().warn('Planning timed out')
-            
-        except Exception as e:
-            self.get_logger().error(f"Error in reachability check: {str(e)}")
-    """def check_reachability_callback(self, pose):
-        try:
-            
-            pose_goal = PoseStamped()
-            pose_goal.header.frame_id = "base_link"
-            pose_goal.pose = pose
-            position = pose.position
-            quat_xyzw = pose.orientation
-            #debugpy.breakpoint()
-            #self.moveit2.compute_ik(position=position, quat_xyzw=quat_xyzw)
-            self.moveit2.plan(pose=pose_goal)
-            #self.moveit2.wait_until_executed()
-            self.get_logger().info('Received: ')
-                
-        except Exception as e:
-            self.get_logger().error(f"Error in reachability check: {str(e)}")"""
+#await asyncio.wait_for(self.moveit2.compute_ik_async(position=pose.position,quat_xyzw=pose.orientation),timeout=0.5)
+
+            ik_result = self.moveit2.compute_ik(position=pose.position,quat_xyzw=pose.orientation)
+            msg = Bool()
+            if ik_result is None:
+                msg.data = False
+            else:
+                msg.data = True
+            self.reachability_publisher.publish(msg)
+
+    def get_current_pose(self):
+        """Get the current end effector pose and print it"""
+        current_pose = self.moveit2.compute_fk()
+        self.current_pose.publish(current_pose)
             
 
 def main(args=None):
     rclpy.init(args=args)
-    planner = WorkEnvelopePlanner()
+    planner = MoveItCommander()
     rclpy.spin(planner)
     planner.destroy_node()
     rclpy.shutdown()
