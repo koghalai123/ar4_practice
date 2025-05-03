@@ -58,9 +58,9 @@ class WorkEnvelopeRefiner:
         distances = np.linalg.norm(self.points[~self.reachable, np.newaxis] - self.points[self.reachable], axis=2)
         distancesReachable = np.linalg.norm(self.points[self.reachable, np.newaxis] - self.points[self.reachable], axis=2)
         minNeighborDist = 0.08
-        minNumNeighbors = 10
+        minNumNeighbors = 11
         newPoints_screened = np.empty((0, 3))  # Initialize as an empty array with shape (0, 3)
-        min_distance = 0.04
+        min_distance = 0.028
         
         closeNeighborsLogical = distancesReachable <minNeighborDist
         closeNeighborsNum = closeNeighborsLogical.sum(axis = 0)
@@ -81,7 +81,7 @@ class WorkEnvelopeRefiner:
         distances = np.linalg.norm(self.points[~self.reachable, np.newaxis] -reachablePoints, axis=2)
         minNeighborDist = 0.08
         
-        k = 30
+        k = 100
         indices = np.argpartition(distances, k, axis=0)[:k]
         newPoints = (self.points[~self.reachable][indices] - reachablePoints[np.newaxis, :, :])/2 + reachablePoints[np.newaxis, :, :]
         newPoints_flattened = newPoints.reshape(-1, 3)
@@ -150,6 +150,9 @@ def main():
         'results7.csv',
         'results8.csv',
         'results9.csv',
+        'results10.csv',
+        'results11.csv',
+        'results12.csv',
     ])
     
     # Find boundary samples

@@ -35,6 +35,9 @@ def load_multiple_files(input_files):
         except:
             print(f"File not found in source directory: {input_file}")
             raise
+    mirror = dataArray
+    mirror[:, 0] *= -1
+    dataArray = np.vstack((dataArray, mirror))
     return dataArray[:,0:3], dataArray[:,3]==1
                 
 
@@ -126,6 +129,39 @@ def visualize_poisson_surface(points, labels):
     plt.tight_layout()
     plt.show()
     
+def smooth_with_open3d(vertices, faces, iterations=50):
+    """Smooth mesh using Open3D's Taubin smoothing"""
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.compute_vertex_normals()
+    return mesh.filter_smooth_taubin(number_of_iterations=iterations)
+
+def plot_smoothed_mesh(vertices, faces):
+    """Plot the smoothed mesh in 3D using matplotlib"""
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot the surface
+    ax.plot_trisurf(
+        vertices[:, 0], vertices[:, 1], vertices[:, 2],
+        triangles=faces,
+        color='lightblue', edgecolor='none', alpha=0.8
+    )
+    
+    # Set labels and title
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_title('Smoothed Alpha Shape')
+    
+    # Equal aspect ratio
+    ax.set_box_aspect([1, 1, 1])  # Requires matplotlib 3.3+
+    
+    plt.tight_layout()
+    plt.show()
+
+# Apply smoothing
 
 
 def visualize_alpha_shape(points, labels, alpha=0.5):
@@ -140,13 +176,31 @@ def visualize_alpha_shape(points, labels, alpha=0.5):
     #ax.scatter(df_3d['x'], df_3d['y'], df_3d['z'])
     #plt.show()
     alpha_shape = alphashape.alphashape(reachable, alpha)
+    """smoothed_vertices, smoothed_faces = smooth_with_open3d(
+    np.array(alpha_shape.vertices),
+    np.array(alpha_shape.faces))
     #alpha_shape.show()
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax.plot_trisurf(*zip(*alpha_shape.vertices), triangles=alpha_shape.faces)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
     plt.show()
 
-    print(1)
+    print(1)"""
+    vertices = np.array(alpha_shape.vertices)
+    faces = np.array(alpha_shape.faces)
+
+    # Apply smoothing
+    smoothed_mesh = smooth_with_open3d(vertices, faces, iterations=50)
+
+    # Get smoothed vertices and faces
+    smoothed_vertices = np.asarray(smoothed_mesh.vertices)
+    smoothed_faces = np.asarray(smoothed_mesh.triangles)
+
+    # Plot the results
+    plot_smoothed_mesh(smoothed_vertices, smoothed_faces)
 
 
 def ball_pivoting_reconstruction(points, radii=[0.05, 0.1, 0.2]):
@@ -211,13 +265,20 @@ if __name__ == "__main__":
         'results4.csv',
         'results5.csv',
         'results6.csv',
+        'results7.csv',
+        'results8.csv',
+        'results9.csv',
+        'results10.csv',
+        'results11.csv',
+        'results12.csv',
+        'results13.csv',
     ]
     
     print(f"Processing files: {input_files}")
     points, labels = load_multiple_files(input_files)
     print(f"Total points loaded: {len(points)} (Reachable: {sum(labels)}, Unreachable: {sum(labels==0)})")
     #visualize_convex_surface(points, labels)
-    visualize_alpha_shape(points, labels,alpha=10.1)
+    visualize_alpha_shape(points, labels,alpha=8.1)
     #visualize_bpa_mesh(points, labels, radii=[0.05, 0.1])
 
     #visualize_poisson_surface(points, labels)

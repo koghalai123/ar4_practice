@@ -94,7 +94,7 @@ def main(args=None):
     
     analyzer = WorkEnvelopeAnalyzer()
     analyzer.grid_file = None
-    analyzer.grid_file = 'boundary_samples5.csv'
+    analyzer.grid_file = 'boundary_samples9.csv'
     analyzer.generate_grid()
     from geometry_msgs.msg import Point, Quaternion
 
