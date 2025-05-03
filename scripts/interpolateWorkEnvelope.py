@@ -56,20 +56,40 @@ class WorkEnvelopeRefiner:
 
     def find_boundary_samples(self, max_distance=0.5):
         distances = np.linalg.norm(self.points[~self.reachable, np.newaxis] - self.points[self.reachable], axis=2)
+        distancesReachable = np.linalg.norm(self.points[self.reachable, np.newaxis] - self.points[self.reachable], axis=2)
+        minNeighborDist = 0.08
+        minNumNeighbors = 10
+        newPoints_screened = np.empty((0, 3))  # Initialize as an empty array with shape (0, 3)
+        min_distance = 0.04
+        
+        closeNeighborsLogical = distancesReachable <minNeighborDist
+        closeNeighborsNum = closeNeighborsLogical.sum(axis = 0)
+        lonelyPoints = closeNeighborsNum<minNumNeighbors
+        
         k = 5
         indices = np.argpartition(distances, k, axis=0)[:k]
         newPoints = (self.points[~self.reachable][indices] - self.points[self.reachable][np.newaxis, :, :])/2 + self.points[self.reachable][np.newaxis, :, :]
-        
         newPoints_flattened = newPoints.reshape(-1, 3)
         
-        newPoints_screened = np.empty((0, 3))  # Initialize as an empty array with shape (0, 3)
-        min_distance = 0.04
-
         for i in newPoints_flattened:
             distances2 = np.linalg.norm(self.points - i, axis=1)
             if not np.any(distances2 < min_distance):
                 newPoints_screened = np.vstack((newPoints_screened, i.reshape(1, 3)))  # Add i with the correct shape
-
+        
+        reachablePoints = self.points[self.reachable][lonelyPoints]
+        
+        distances = np.linalg.norm(self.points[~self.reachable, np.newaxis] -reachablePoints, axis=2)
+        minNeighborDist = 0.08
+        
+        k = 30
+        indices = np.argpartition(distances, k, axis=0)[:k]
+        newPoints = (self.points[~self.reachable][indices] - reachablePoints[np.newaxis, :, :])/2 + reachablePoints[np.newaxis, :, :]
+        newPoints_flattened = newPoints.reshape(-1, 3)
+        
+        for i in newPoints_flattened:
+            distances2 = np.linalg.norm(self.points - i, axis=1)
+            if not np.any(distances2 < min_distance):
+                newPoints_screened = np.vstack((newPoints_screened, i.reshape(1, 3))) 
         return newPoints_screened
 
     def save_samples(self, samples, output_file):
@@ -127,6 +147,9 @@ def main():
         'results4.csv',
         'results5.csv',
         'results6.csv',
+        'results7.csv',
+        'results8.csv',
+        'results9.csv',
     ])
     
     # Find boundary samples
