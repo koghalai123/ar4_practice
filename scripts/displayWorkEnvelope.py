@@ -20,6 +20,7 @@ from trimesh.voxel import creation
 import open3d as o3d
 import alphashape
 from descartes import PolygonPatch
+from stl import mesh
 
 
 
@@ -109,7 +110,11 @@ def poisson_reconstruction(points,alpha):
             pcd, depth=9)
         # After creating your mesh
     #mesh.compute_vertex_normals()  # Important for proper shading
-
+    mesh.compute_vertex_normals()
+    #o3d.io.write_triangle_mesh("workEnvelope.stl", mesh)
+    print(mesh)
+    #save_mesh(mesh)
+    o3d.visualization.draw_geometries([mesh])
     # Set color for all vertices (RGB values 0-1)
     '''vertex_colors = np.array([[0.1, 0.5, 0.8]] * len(mesh.vertices))  # Blueish color
     mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
@@ -126,16 +131,24 @@ def poisson_reconstruction(points,alpha):
 
     vis.run()
     vis.destroy_window()# 50% transparent'''
-    
-
-    print(mesh)
-    o3d.visualization.draw_geometries([mesh])
-    
-    
-
 
 #def visualize_poisson_surface(points, labels):
-    
+def save_mesh(mesh):
+    filename = 'workEnvelope.csv'
+    vertices = np.asarray(mesh.vertices)  # Shape (N, 3)
+    faces = np.asarray(mesh.triangles)
+    with open('vertices.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['x', 'y', 'z'])  # Header
+        writer.writerows(vertices)
+
+    # Save faces to CSV
+    with open('faces.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['v1', 'v2', 'v3'])  # Header
+        writer.writerows(faces)
+
+    print("Saved vertices.csv and faces.csv")
     
     
 def smooth_with_open3d(vertices, faces, iterations=50):
@@ -199,56 +212,7 @@ def visualize_alpha_shape(points, labels, alpha=0.5):
     plot_smoothed_mesh(vertices, faces)
 
 
-def ball_pivoting_reconstruction(points, radii=[0.05, 0.1, 0.2]):
-    """
-    Reconstruct a surface using the Ball-Pivoting Algorithm.
-    - `radii`: List of ball radii to try (smaller = tighter fits, larger = bridges gaps).
-    """
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    
-    # Estimate normals (critical for BPA)
-    pcd.estimate_normals()
-    
-    # Run BPA
-    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-        pcd, o3d.utility.DoubleVector(radii))
-    return mesh
 
-def visualize_bpa_mesh(points, labels, radii=[0.05, 0.1, 0.2]):
-    """Visualize the BPA-reconstructed mesh with gaps preserved."""
-    reachable = points[labels]
-    unreachable = points[~labels]
-    
-    # Reconstruct mesh
-    mesh = ball_pivoting_reconstruction(reachable, radii)
-    
-    # Extract vertices and triangles
-    vertices = np.asarray(mesh.vertices)
-    triangles = np.asarray(mesh.triangles)
-    
-    # Plot
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot mesh (semi-transparent)
-    ax.plot_trisurf(
-        vertices[:, 0], vertices[:, 1], vertices[:, 2],
-        triangles=triangles,
-        color='cyan', alpha=0.3, edgecolor='k', linewidth=0.5
-    )
-    
-    # Scatter points
-    ax.scatter(reachable[:, 0], reachable[:, 1], reachable[:, 2],
-               c='blue', label='Reachable', s=20)
-    #ax.scatter(unreachable[:, 0], unreachable[:, 1], unreachable[:, 2],c='red', label='Unreachable', s=20)
-    
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-    plt.show()
-    
     
 if __name__ == "__main__":
     import sys
@@ -276,5 +240,5 @@ if __name__ == "__main__":
     #visualize_convex_surface(points, labels)
     #visualize_alpha_shape(points, labels,alpha=8.1)
     #visualize_bpa_mesh(points, labels, radii=[0.05, 0.1])
-    poisson_reconstruction(points,alpha=8.1)
+    poisson_reconstruction(points,alpha=10.1)
     #visualize_poisson_surface(points, labels)

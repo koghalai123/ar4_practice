@@ -78,3 +78,9 @@ ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_
 
 ros2 run ar4_practice joint_commander.py
 
+# To plot the workplace envelope in gazebo(each in its own terminal window): 
+ros2 launch annin_ar4_gazebo gazebo.launch.py
+
+ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
+
+Run "surfacePublisher.py" either through ROS2 or simply through python and add the surface publisher topic to the Rviz2 display to see the envelope. You need the faces.csv and vertices.csv files created through other scripts as well though.
