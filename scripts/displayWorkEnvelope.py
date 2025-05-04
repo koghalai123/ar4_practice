@@ -26,7 +26,7 @@ from descartes import PolygonPatch
 def load_multiple_files(input_files):
     dataArray = np.empty((0, 4))
     for i in input_files:
-        input_file = os.path.join(os.path.dirname(os.path.dirname(get_package_prefix('ar4_practice'))), i)
+        input_file = os.path.join(os.path.dirname(os.path.dirname(get_package_prefix('ar4_practice'))), 'src','ar4_practice',i)
         try:
             
             data = np.genfromtxt(input_file, delimiter=',', comments='#')
@@ -35,8 +35,8 @@ def load_multiple_files(input_files):
         except:
             print(f"File not found in source directory: {input_file}")
             raise
-    mirror = dataArray
-    mirror[:, 0] *= -1
+    mirror = dataArray.copy()
+    mirror[:, 0] = -mirror[:, 0]
     dataArray = np.vstack((dataArray, mirror))
     return dataArray[:,0:3], dataArray[:,3]==1
                 
@@ -77,57 +77,66 @@ def visualize_convex_surface(points, labels):
     plt.tight_layout()
     plt.show()
 
-def poisson_reconstruction(points):
+def poisson_reconstruction(points,alpha):
     """Perform Poisson surface reconstruction on a point cloud."""
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    
-    # Estimate normals (required for Poisson)
-    pcd.estimate_normals()
-    
-    # Run Poisson reconstruction
-    mesh, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=8)
-    return mesh
-
-def visualize_poisson_surface(points, labels):
-    """Visualize the Poisson-reconstructed surface."""
     reachable = points[labels]
     unreachable = points[~labels]
+    alpha_shape = alphashape.alphashape(reachable, alpha)
+    vertices = np.array(alpha_shape.vertices)
+    faces = np.array(alpha_shape.faces)    
     
-    # Compute Poisson mesh
-    mesh = poisson_reconstruction(reachable)
     
-    # Extract vertices and triangles
-    vertices = np.asarray(mesh.vertices)
-    triangles = np.asarray(mesh.triangles)
     
-    # Plotting
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
     
-    # Plot the Poisson surface (semi-transparent)
-    ax.plot_trisurf(
-        vertices[:, 0], vertices[:, 1], vertices[:, 2],
-        triangles=triangles,
-        color='cyan', alpha=0.3, edgecolor='k', linewidth=0.5
-    )
+    pcd = o3d.geometry.TriangleMesh()
+    pcd.vertices = o3d.utility.Vector3dVector(vertices)
+    pcd.triangles = o3d.utility.Vector3iVector(faces)
     
-    # Scatter original points
-    ax.scatter(reachable[:, 0], reachable[:, 1], reachable[:, 2], 
-               c='blue', marker='o', label='Reachable', s=20)
+    pcd = pcd.sample_points_poisson_disk(5000)
+    pcd.normals = o3d.utility.Vector3dVector(np.zeros(
+        (1, 3)))  # invalidate existing normals
 
+    pcd.estimate_normals()
+    #o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+    pcd.orient_normals_consistent_tangent_plane(100)
+    #o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+
+
+
+    with o3d.utility.VerbosityContextManager(
+            o3d.utility.VerbosityLevel.Debug) as cm:
+        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+            pcd, depth=9)
+        # After creating your mesh
+    #mesh.compute_vertex_normals()  # Important for proper shading
+
+    # Set color for all vertices (RGB values 0-1)
+    '''vertex_colors = np.array([[0.1, 0.5, 0.8]] * len(mesh.vertices))  # Blueish color
+    mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
+
+    # For visualization with transparency, we need to use the Visualizer class
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    vis.add_geometry(mesh)
+
+    # Set render options for transparency (approximation)
+    render_option = vis.get_render_option()
+    render_option.mesh_show_back_face = True  # Helps with transparency effect
+    render_option.light_on = True  # Better shading
+
+    vis.run()
+    vis.destroy_window()# 50% transparent'''
     
-    # Labels and legend
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_title('Poisson-Reconstructed Surface', fontsize=14)
-    ax.legend()
+
+    print(mesh)
+    o3d.visualization.draw_geometries([mesh])
     
-    # Adjust view
-    ax.view_init(elev=20, azim=45)
-    plt.tight_layout()
-    plt.show()
+    
+
+
+#def visualize_poisson_surface(points, labels):
+    
+    
     
 def smooth_with_open3d(vertices, faces, iterations=50):
     """Smooth mesh using Open3D's Taubin smoothing"""
@@ -146,7 +155,7 @@ def plot_smoothed_mesh(vertices, faces):
     ax.plot_trisurf(
         vertices[:, 0], vertices[:, 1], vertices[:, 2],
         triangles=faces,
-        color='lightblue', edgecolor='none', alpha=0.8
+        color='lightblue', edgecolor='none', alpha=0.5
     )
     
     # Set labels and title
@@ -176,19 +185,6 @@ def visualize_alpha_shape(points, labels, alpha=0.5):
     #ax.scatter(df_3d['x'], df_3d['y'], df_3d['z'])
     #plt.show()
     alpha_shape = alphashape.alphashape(reachable, alpha)
-    """smoothed_vertices, smoothed_faces = smooth_with_open3d(
-    np.array(alpha_shape.vertices),
-    np.array(alpha_shape.faces))
-    #alpha_shape.show()
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.plot_trisurf(*zip(*alpha_shape.vertices), triangles=alpha_shape.faces)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    plt.show()
-
-    print(1)"""
     vertices = np.array(alpha_shape.vertices)
     faces = np.array(alpha_shape.faces)
 
@@ -200,7 +196,7 @@ def visualize_alpha_shape(points, labels, alpha=0.5):
     smoothed_faces = np.asarray(smoothed_mesh.triangles)
 
     # Plot the results
-    plot_smoothed_mesh(smoothed_vertices, smoothed_faces)
+    plot_smoothed_mesh(vertices, faces)
 
 
 def ball_pivoting_reconstruction(points, radii=[0.05, 0.1, 0.2]):
@@ -278,7 +274,7 @@ if __name__ == "__main__":
     points, labels = load_multiple_files(input_files)
     print(f"Total points loaded: {len(points)} (Reachable: {sum(labels)}, Unreachable: {sum(labels==0)})")
     #visualize_convex_surface(points, labels)
-    visualize_alpha_shape(points, labels,alpha=8.1)
+    #visualize_alpha_shape(points, labels,alpha=8.1)
     #visualize_bpa_mesh(points, labels, radii=[0.05, 0.1])
-
+    poisson_reconstruction(points,alpha=8.1)
     #visualize_poisson_surface(points, labels)
