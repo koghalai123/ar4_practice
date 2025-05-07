@@ -241,4 +241,5 @@ if __name__ == "__main__":
     #visualize_alpha_shape(points, labels,alpha=8.1)
     #visualize_bpa_mesh(points, labels, radii=[0.05, 0.1])
     poisson_reconstruction(points,alpha=10.1)
+    print('done')
     #visualize_poisson_surface(points, labels)
