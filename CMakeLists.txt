@@ -7,16 +7,16 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_generators REQUIRED)  # Required for service generation
+#find_package(rosidl_default_generators REQUIRED)  # Required for service generation
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 find_package(geometry_msgs REQUIRED)
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/GetPose.srv"
-  DEPENDENCIES geometry_msgs
-)
+#rosidl_generate_interfaces(${PROJECT_NAME}
+ # "srv/GetPose.srv"
+ # DEPENDENCIES geometry_msgs
+#)
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
