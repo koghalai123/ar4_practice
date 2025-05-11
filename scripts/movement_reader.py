@@ -146,7 +146,7 @@ def main(args=None):
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--joint', action='store_true', help='Use joint position control')
-    parser.add_argument('--pose', action='store_true', help='Use Cartesian pose control')
+    parser.add_argument('--pose', default = True ,action='store_true', help='Use Cartesian pose control')
     parser.add_argument('--file', default = 'commands.txt' ,type=str, help='File containing commands (one per line)')
     args = parser.parse_args()
     
