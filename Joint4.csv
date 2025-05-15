@@ -1,0 +1,5 @@
+Transformation Matrix for Joint: Joint4
+0,0,-1.00000000000000,0
+-1.0*cos(q_joint_4),-1.0*sin(q_joint_4),0,0
+-1.0*sin(q_joint_4),1.0*cos(q_joint_4),0,0
+0,0,0,1

@@ -1,0 +1,5 @@
+Transformation Matrix for Joint: Joint2
+0,0,-1.00000000000000,0
+-1.0*cos(q_joint_2),-1.0*sin(q_joint_2),0,0.0642000000000000
+-1.0*sin(q_joint_2),1.0*cos(q_joint_2),0,-0.169770000000000
+0,0,0,1

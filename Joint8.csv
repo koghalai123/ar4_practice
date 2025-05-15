@@ -1,0 +1,5 @@
+Transformation Matrix for Joint: Joint8
+-1.00000000000000,0,0,1.0*q_gripper_jaw2_joint
+0,1,0,-0.0360000000000000
+0,0,-1.00000000000000,0
+0,0,0,1
