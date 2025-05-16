@@ -46,7 +46,7 @@ dQ = np.random.uniform(-dQMagnitude, dQMagnitude, (1, 6))
 joint_positions_actual = joint_positions_commanded + dQ
 
 LMat = np.ones((1, 6))
-dLMagnitude = 0.05
+dLMagnitude = 0.1
 dL = np.random.uniform(-dLMagnitude, dLMagnitude, (1, 6))
 
 
@@ -97,7 +97,8 @@ for j in range(0, numIters):
     
     noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
     joint_positions = joint_positions_commanded+np.sum(dQMat,axis=0) + noise
-    joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
+    #joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
+    joint_lengths = joint_lengths_actual
 
     for i in range(0, joint_positions_commanded.shape[0]):
         
