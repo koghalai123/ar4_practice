@@ -6,6 +6,10 @@ from pymoveit2 import MoveIt2
 from rclpy.callback_groups import ReentrantCallbackGroup
 import numpy as np
 import sympy as sp
+from sympy import symbols, Matrix, eye
+from sympy.physics.mechanics import dynamicsymbols
+from sympy.physics.vector import ReferenceFrame
+from sympy.physics.vector import init_vprinting
 from urdf_parser_py.urdf import URDF
 from xacro import process_file
 import os
@@ -13,7 +17,7 @@ import numpy as np
 from functools import partial
 import csv
 from scipy.spatial.transform import Rotation as R
-
+import pandas as pd
 
 symbolic_matrices = {}
 
@@ -31,11 +35,19 @@ for fileName in fileNameList:
     symbolic_matrices[key] = symbolic_matrix
 
 #print(symbolic_matrices["Joint1"])
-
-
+def get_homogeneous_transform(xyz, euler_angles, rotation_order='XYZ'):
+    rotation = R.from_euler(rotation_order, euler_angles)
+    rot_mat = rotation.as_matrix()
+    transform = np.eye(4)
+    transform[:3, :3] = rot_mat
+    transform[:3, 3] = xyz
+    
+    return transform
 
 n = 20
 m = 6
+noiseMagnitude = 0.00
+
 joint_positions_commanded = np.random.uniform(-3, 3, (n, 6))
 poseArrayActual = np.zeros((n, m))
 poseArrayCommanded = np.zeros((n, m))
@@ -49,9 +61,32 @@ LMat = np.ones((1, 6))
 dLMagnitude = 0.1
 dL = np.random.uniform(-dLMagnitude, dLMagnitude, (1, 6))
 
+XNominal = np.zeros((6))
+dXMagnitude = 0.1
+dX = np.random.uniform(-dXMagnitude, dXMagnitude, (1,6))
+XActual = XNominal + dX
+originToBaseActual = get_homogeneous_transform(XActual[0,0:3], XActual[0,3:6], rotation_order='XYZ')
 
 baseToWrist = sp.eye(4)
+wristToBase = sp.eye(4)
 l = sp.symbols('l1:7')
+x = sp.symbols('x1:7')
+
+def symbolic_transform_with_ref_frames(xyz, euler_angles, rotation_order='XYZ'):
+ 
+    N = ReferenceFrame('N')  # World frame
+    B = N.orientnew('B', 'Body', euler_angles, rotation_order)
+    
+    R = N.dcm(B)
+    
+    T = eye(4)
+    T[:3, :3] = R.T  # Transpose to get rotation from B to N
+    T[:3, 3] = xyz
+    
+    return T
+
+originToBase = symbolic_transform_with_ref_frames(x[0:3], x[3:6], rotation_order='XYZ')
+
 for i in range(1, 7):
     key = "Joint" + str(i)
     symbolic_matrix = symbolic_matrices[key]
@@ -60,51 +95,73 @@ for i in range(1, 7):
     LMat[0, i - 1] = norm_symbolic
     symbolic_matrix[:3,3]=symbolic_matrix[:3,3]*l[i-1]
     baseToWrist = baseToWrist * symbolic_matrix
+    wristToBase = symbolic_matrix.inv() * wristToBase
+    symbolic_matrices[key] = symbolic_matrix
     #print(i)
+
+numIters = 6
+dQMat = np.zeros((numIters, 6))
+dLMat = np.zeros((numIters, 6))
+dXMat = np.zeros((numIters, 6))
+avgAccMat = np.ones((numIters,1))
+
+
+q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
+
+originToWrist = originToBase*baseToWrist
+translation_vector = originToWrist[:3, 3]
+vars = list(q) + list(l) + list(x)
+jacobian_translation = translation_vector.jacobian(vars)
+
 
 joint_lengths_nominal = LMat.flatten()
 joint_lengths_actual = joint_lengths_nominal + dL.flatten()
 
-noiseMagnitude = 0.000
-noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
-joint_positions = joint_positions_actual + noise
-joint_lengths = joint_lengths_actual
-for i in range(0, joint_positions_actual.shape[0]):
-    
+
+for j in range(0, numIters):
+    l = sp.symbols('l1:7')
+    x = sp.symbols('x1:7')
     q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
 
-    M_num_actual = baseToWrist.subs({
-    **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-    **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
-    })   
-    rot_matrix = M_num_actual[:3, :3]
-    r = R.from_matrix(rot_matrix)
-    #quat = r.as_quat()
-    euler = r.as_euler('xyz')
-    trans = np.array(M_num_actual[:3, 3]).flatten().T
-    row = np.concatenate((trans, euler))
-    poseArrayActual[i, :] = row
-    
-numIters = 10
-dQMat = np.zeros((numIters, 6))
-dLMat = np.zeros((numIters, 6))
-q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-translation_vector = baseToWrist[:3, 3]
-vars = list(q) + list(l)
-jacobian_translation = translation_vector.jacobian(vars)
-for j in range(0, numIters):
+    noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
+    joint_positions = joint_positions_actual + noise - np.sum(dQMat,axis=0)
+    joint_lengths = joint_lengths_actual
+    XOffsets = XActual.flatten()
+    for i in range(0, joint_positions_actual.shape[0]):
+
+        M_num_actual = originToWrist.subs({
+        **{q[j]: joint_positions[i, j] for j in range(6)},
+        **{l[j]: joint_lengths[j] for j in range(6)},
+        **{x[j]: XOffsets[j] for j in range(6)}
+        })   
+        '''M_num_inverse = wristToBase.subs({
+        **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
+        **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
+        }) '''
+        rot_matrix = M_num_actual[:3, :3]
+        r = R.from_matrix(rot_matrix)
+        #quat = r.as_quat()
+        euler = r.as_euler('xyz')
+        trans = np.array(M_num_actual[:3, 3]).flatten().T
+        row = np.concatenate((trans, euler))
+        poseArrayActual[i, :] = row
+
     numJacobian = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
     
+
+
+
     noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
-    joint_positions = joint_positions_commanded+np.sum(dQMat,axis=0) + noise
+    joint_positions = joint_positions_commanded + noise
     #joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
-    joint_lengths = joint_lengths_actual
+    joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
 
     for i in range(0, joint_positions_commanded.shape[0]):
-        
-        M_num_commanded = baseToWrist.subs({
+        XOffsets = XNominal + np.sum(dXMat,axis=0)
+        M_num_commanded = originToWrist.subs({
             **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-            **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
+            **{l[j]: joint_lengths[j] for j in range(6)},
+            **{x[j]: XOffsets[j] for j in range(6)},
         })   
         rot_matrix = M_num_commanded[:3, :3]
         r = R.from_matrix(rot_matrix)
@@ -115,7 +172,8 @@ for j in range(0, numIters):
         poseArrayCommanded[i, :] = row
         partials = jacobian_translation.subs({
             **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-            **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
+            **{l[j]: joint_lengths[j] for j in range(6)},
+            **{x[j]: XOffsets[j] for j in range(6)},
         })   
         #print(partials)
         numJacobian[3*i:3*i+3,:] = np.array(partials).astype(np.float64)
@@ -123,39 +181,58 @@ for j in range(0, numIters):
     translationDifferences = (poseArrayActual-poseArrayCommanded)[:,:3]
     accuracyError= np.linalg.norm(translationDifferences, axis=1)
     avgAccuracyError = np.mean(accuracyError)
-
-
+    avgAccMat[j,0] = avgAccuracyError
 
     bMat = translationDifferences.flatten()
     AMat = numJacobian
-    x, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
+    errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
 
-    
-    dQEst = x[0:6]
+    dQEst = errorEstimates[0:6]
     dQMat[j, :] = dQEst
-    dLEst = x[6:12]
+    dLEst = errorEstimates[6:12]
     dLMat[j, :] = dLEst
-    '''joint_positions = joint_positions_commanded+x
-    for i in range(0, joint_positions_commanded.shape[0]):
-        
-        M_num_calibrated = baseToWrist.subs({q1: joint_positions[i,0],q2: joint_positions[i,1],q3: joint_positions[i,2],q4: joint_positions[i,3],q5: joint_positions[i,4],q6: joint_positions[i,5],})
-        rot_matrix = M_num_calibrated[:3, :3]
-        r = R.from_matrix(rot_matrix)
-        #quat = r.as_quat()
-        euler = r.as_euler('xyz')
-        trans = np.array(M_num_calibrated[:3, 3]).flatten().T
-        row = np.concatenate((trans, euler))
-        poseArrayCalibrated[i, :] = row
-        partials = jacobian_translation.subs({q1: joint_positions[i,0],q2: joint_positions[i,1],q3: joint_positions[i,2],q4: joint_positions[i,3],q5: joint_positions[i,4],q6: joint_positions[i,5],})
-        #print(partials)
-        numJacobian[3*i:3*i+3,:] = np.array(partials).astype(np.float64)
-
-    translationDifferencesCalibrated = (poseArrayActual-poseArrayCalibrated)[:,:3]
-    accuracyErrorCalibrated = np.linalg.norm(translationDifferencesCalibrated, axis=1)
-    avgAccuracyErrorCalibrated = np.mean(accuracyErrorCalibrated)'''
+    dXEst = errorEstimates[12:18]
+    dXMat[j, :] = dXEst
     print("Iteration: ", j)
     print("Avg Accuracy Error: ", avgAccuracyError)
     print("dLEst: ", dLEst)
     print("dQEst: ", dQEst)
+    print("dXEst: ", dXEst)
+    print("")
+
+
+
+
+arrays = [dQ, dL, dX, np.array([noiseMagnitude]), np.array([n]), avgAccMat, dQMat, dLMat, dXMat]
+max_len = max(arr.shape[0] for arr in arrays)
+
+padded = []
+for arr in arrays:
+    arr = np.atleast_2d(arr).astype(float)  # Ensure float dtype for NaN padding
+    # If arr is shape (1, N), transpose to (N, 1) for 1D arrays
+    if arr.shape[0] == 1 and arr.shape[1] != 1 and arr.shape[1] < max_len:
+        arr = arr.T
+    pad_width = ((0, max_len - arr.shape[0]), (0, 0))
+    arr_padded = np.pad(arr, pad_width, constant_values=np.nan)
+    padded.append(arr_padded)
+
+combined = np.hstack(padded)
+
+columns = []
+prefixes = ['dQ', 'dL', 'dX', 'noiseMagnitude', 'n', 'avgAccMat', 'dQMat', 'dLMat', 'dXMat']
+
+for arr, prefix in zip(arrays, prefixes):
+    arr = np.atleast_2d(arr)
+    n_cols = arr.shape[1]
+    # For scalars or 1D arrays, just use the prefix
+    if n_cols == 1:
+        columns.append(prefix)
+    else:
+        columns.extend([f"{prefix}{i+1}" for i in range(n_cols)])
+
+df = pd.DataFrame(combined, columns=columns)
+df.to_csv('calibrationData.csv', index=False)
+
+
 
 print('done')
