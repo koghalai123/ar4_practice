@@ -9,10 +9,15 @@ import cv2
 import cv2.aruco as aruco
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
 
 class ArucoDetector(Node):
     def __init__(self):
         super().__init__('aruco_detector')
+        
+        
         
         # Initialize CV Bridge
         self.bridge = CvBridge()
@@ -29,8 +34,18 @@ class ArucoDetector(Node):
         ])
         self.dist_coeffs = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
         
-        # Marker size in meters
-        self.marker_size = 0.05  # 5cm
+        self.marker_size = 0.05  # 5cm = 50mm
+        self.arucoRows = 7
+        self.arucoCols = 5
+        self.marginSize= 0.050 #5 cm = 50 mm
+
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.board = cv2.aruco.GridBoard(
+        size=(self.arucoRows, self.arucoCols),  # Number of markers in (rows, cols)
+        markerLength=self.marker_size,  # Length of one marker side (meters)
+        markerSeparation=self.marginSize,  # Distance between markers (meters)
+        dictionary=dictionary
+        )
         
         # Create subscribers and publishers
         self.image_sub = self.create_subscription(
@@ -56,12 +71,12 @@ class ArucoDetector(Node):
             # Convert ROS Image to OpenCV
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             display_image = cv_image.copy()
-            
+
             # Detect markers
             gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
             corners, ids, rejected = cv2.aruco.detectMarkers(
                 gray, self.aruco_dict, parameters=self.aruco_params)
-            
+
             if ids is not None:
                 # Estimate pose for each marker
                 rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
@@ -71,9 +86,32 @@ class ArucoDetector(Node):
                 cv2.aruco.drawDetectedMarkers(display_image, corners, ids)
                 
                 for i in range(len(ids)):
-                    # Draw axis for each marker
+                    # Draw axis at the center
                     cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
                                     rvecs[i], tvecs[i], self.marker_size * 0.5)
+                    
+                    # ====== NEW: Draw axis at the center of the marker ======
+                    # Compute the center pose (shift by half marker size along x and y)
+                    boardRotation = np.mean(rvecs,axis=0)
+                    markerRow = np.floor(np.divide(ids,self.arucoCols))
+                    markerCol = np.mod(ids,self.arucoCols)
+
+                    rowVec = (self.arucoRows-1)/2 - markerRow[i][0]
+                    colVec = (self.arucoCols-1)/2 - markerCol[i][0]
+
+                    displacementVec = np.array([[(self.marker_size+self.marginSize)*colVec], [-(self.marker_size+self.marginSize)*rowVec], [0]])
+                    R_marker, _ = cv2.Rodrigues(rvecs[i])
+                    t_center = tvecs[i].reshape(3, 1) + R_marker @ displacementVec
+                    t_center = t_center.flatten()       
+                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                            rvecs[i], t_center, self.marker_size * 0.5)
+                    
+                    '''#draw axes at corners
+                    R_marker, _ = cv2.Rodrigues(rvecs[i])
+                    t_center = tvecs[i].reshape(3, 1) + R_marker @ np.array([[self.marker_size/2], [self.marker_size/2], [0]])
+                    t_center = t_center.flatten()       
+                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                                    rvecs[i], t_center, self.marker_size * 0.5)'''
                     
                     # Calculate distance
                     distance = np.linalg.norm(tvecs[i])
@@ -89,9 +127,8 @@ class ArucoDetector(Node):
                                 (int(center[0]) - 30, int(center[1]) + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     
-                    # Publish pose
                     self.publish_pose(rvecs[i], tvecs[i], ids[i][0])
-            
+                
             # Display the image
             cv2.imshow('Aruco Marker Detection', display_image)
             key = cv2.waitKey(1) & 0xFF
@@ -121,8 +158,13 @@ class ArucoDetector(Node):
         pose_msg.pose.orientation.z = quat[2]
         pose_msg.pose.orientation.w = quat[3]
         
+        
+        
+        
         self.pose_pub.publish(pose_msg)
         self.get_logger().info(f"Detected Marker {marker_id} at {tvec[0]}")
+        
+        
 
     def shutdown(self):
         cv2.destroyAllWindows()
