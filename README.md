@@ -90,4 +90,6 @@ Run "surfacePublisher.py" either through ROS2 or simply through python and add t
 
 pip install shapely trimesh open3d alphashape descartes numpy-stl "pyglet<2" --break-system-packages
 
-# To start Realsense node: ros2 run realsense2_camera realsense2_camera_node
+# To start Realsense node: 
+
+ros2 run realsense2_camera realsense2_camera_node

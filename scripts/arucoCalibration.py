@@ -67,80 +67,161 @@ class ArucoDetector(Node):
         self.get_logger().info("Aruco Marker Detector node initialized - Press 'q' to quit")
     
 
-    def image_callback2(self, msg):
-        try:
-            # Convert ROS Image to OpenCV
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            display_image = cv_image.copy()
-
-            # Detect markers
-            gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-            corners, ids, rejected = cv2.aruco.detectMarkers(
-                gray, self.aruco_dict, parameters=self.aruco_params)
-
-            if ids is not None:
-                # Estimate pose for each marker
-                rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-                    corners, self.marker_size, self.camera_matrix, self.dist_coeffs)
-                
-                # Draw detected markers and axes
-                cv2.aruco.drawDetectedMarkers(display_image, corners, ids)
-                
-                for i in range(len(ids)):
-                    # Draw axis at the center
-                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
-                                    rvecs[i], tvecs[i], self.marker_size * 0.5)
-                    
-                    # ====== NEW: Draw axis at the center of the marker ======
-                    # Compute the center pose (shift by half marker size along x and y)
-                    boardRotation = np.mean(rvecs,axis=0)
-                    markerRow = np.floor(np.divide(ids,self.arucoCols))
-                    markerCol = np.mod(ids,self.arucoCols)
-
-                    rowVec = (self.arucoRows-1)/2 - markerRow[i][0]
-                    colVec = (self.arucoCols-1)/2 - markerCol[i][0]
-
-                    displacementVec = np.array([[(self.marker_size+self.marginSize)*colVec], [-(self.marker_size+self.marginSize)*rowVec], [0]])
-                    R_marker, J = cv2.Rodrigues(rvecs[i])
-                    t_center = tvecs[i].reshape(3, 1) + R_marker @ displacementVec
-                    t_center = t_center.flatten()       
-                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
-                            rvecs[i], t_center, self.marker_size * 0.5)
-                    
-                    '''#draw axes at corners
-                    R_marker, _ = cv2.Rodrigues(rvecs[i])
-                    t_center = tvecs[i].reshape(3, 1) + R_marker @ np.array([[self.marker_size/2], [self.marker_size/2], [0]])
-                    t_center = t_center.flatten()       
-                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
-                                    rvecs[i], t_center, self.marker_size * 0.5)'''
-                    
-                    # Calculate distance
-                    distance = np.linalg.norm(tvecs[i])
-                    
-                    # Get marker center for text placement
-                    center = corners[i][0].mean(axis=0)
-                    
-                    # Display marker info
-                    cv2.putText(display_image, f"ID: {ids[i][0]}", 
-                                (int(center[0]) - 30, int(center[1]) - 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    cv2.putText(display_image, f"Dist: {distance:.2f}m", 
-                                (int(center[0]) - 30, int(center[1]) + 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    
-                    self.publish_pose(rvecs[i], tvecs[i], ids[i][0])
-            poi = optimize_poi(rvecs, tvecs, ids, marker_positions)
-
-            # Display the image
-            cv2.imshow('Aruco Marker Detection', display_image)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                self.shutdown()
-            
-        except Exception as e:
-            self.get_logger().error(f"Error processing image: {str(e)}")
-
     def image_callback(self, msg):
+        # Convert ROS Image to OpenCV
+        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        display_image = cv_image.copy()
+
+        # Detect markers
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        corners, ids, rejected = cv2.aruco.detectMarkers(
+            gray, self.aruco_dict, parameters=self.aruco_params)
+
+        if ids is not None:
+            # Estimate pose for each marker
+            rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
+                corners, self.marker_size, self.camera_matrix, self.dist_coeffs)
+            
+            # Draw detected markers and axes
+            cv2.aruco.drawDetectedMarkers(display_image, corners, ids)
+            
+            for i in range(len(ids)):
+                # Draw axis at the center
+                cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                                rvecs[i], tvecs[i], self.marker_size * 0.5)
+                
+                # ====== NEW: Draw axis at the center of the marker ======
+                # Compute the center pose (shift by half marker size along x and y)
+                boardRotation = np.mean(rvecs,axis=0)
+                markerRow = np.floor(np.divide(ids,self.arucoCols))
+                markerCol = np.mod(ids,self.arucoCols)
+
+                rowVec = (self.arucoRows-1)/2 - markerRow[i][0]
+                colVec = (self.arucoCols-1)/2 - markerCol[i][0]
+
+                displacementVec = np.array([[(self.marker_size+self.marginSize)*colVec], [-(self.marker_size+self.marginSize)*rowVec], [0]])
+                R_marker, J = cv2.Rodrigues(rvecs[i])
+                t_center = tvecs[i].reshape(3, 1) + R_marker @ displacementVec
+                t_center = t_center.flatten()       
+                #cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                 #       rvecs[i], t_center, self.marker_size * 0.5)
+                
+                '''#draw axes at corners
+                R_marker, _ = cv2.Rodrigues(rvecs[i])
+                t_center = tvecs[i].reshape(3, 1) + R_marker @ np.array([[self.marker_size/2], [self.marker_size/2], [0]])
+                t_center = t_center.flatten()       
+                cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                                rvecs[i], t_center, self.marker_size * 0.5)'''
+                
+                # Calculate distance
+                distance = np.linalg.norm(tvecs[i])
+                
+                # Get marker center for text placement
+                center = corners[i][0].mean(axis=0)
+                
+                # Display marker info
+                cv2.putText(display_image, f"ID: {ids[i][0]}", 
+                            (int(center[0]) - 30, int(center[1]) - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(display_image, f"Dist: {distance:.2f}m", 
+                            (int(center[0]) - 30, int(center[1]) + 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                self.publish_pose(rvecs[i], tvecs[i], ids[i][0])
+        #poi = optimize_poi(rvecs, tvecs, ids, marker_positions)
+            x_opt, theta_opt = self.optimize_poses(rvecs, tvecs, ids)
+        
+            x_opt_2d, _ = cv2.projectPoints(x_opt.reshape(3, 1), np.zeros(3), np.zeros(3), self.camera_matrix, self.dist_coeffs)
+            cv2.circle(display_image, tuple(x_opt_2d[0][0].astype(int)), 5, (0, 0, 255), -1)
+
+        
+        #print("Optimized common point:", x_opt)
+        #print("Angle corrections:", theta_opt)
+
+        # Optional: Update rvecs with corrections
+        #for i in range(len(ids)):
+         #   rvecs[i] += theta_opt[i].reshape(3, 1)
+        # Display the image
+        cv2.imshow('Aruco Marker Detection', display_image)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            self.shutdown()
+            
+
+
+
+    def optimize_poses(self, rvecs, tvecs, ids):
+        """Solve for common point x and angle corrections theta_i."""
+        N = len(ids)
+        dim_x = 3
+        dim_theta = 3
+
+        # === Collect A_i and t_center_i ===
+        A_list = []
+        t_centers = []
+        for i in range(N):
+            # Compute displacementVec (as in your existing code)
+            markerRow = np.floor(ids[i] / self.arucoCols)
+            markerCol = np.mod(ids[i], self.arucoCols)
+            rowVec = (self.arucoRows - 1)/2 - markerRow[0]
+            colVec = (self.arucoCols - 1)/2 - markerCol[0]
+            displacementVec = np.array([
+                [(self.marker_size + self.marginSize) * colVec],
+                [-(self.marker_size + self.marginSize) * rowVec],
+                [0]
+            ])
+
+            # Get Jacobian J and compute A_i
+            R_marker, J = cv2.Rodrigues(rvecs[i])
+            J_reshaped = J.reshape(3, 3, 3)  # Shape: (3, 3, 3)
+            A_i = np.tensordot(J_reshaped, displacementVec, axes=([2], [0]))  # Shape: (3, 3, 1)
+            A_list.append(A_i.squeeze())  # Remove singleton dim to get (3, 3)
+
+            # Compute t_center (as in your existing code)
+            t_center = tvecs[i].reshape(3, 1) + R_marker @ displacementVec
+            t_centers.append(t_center)
+
+        # === Build Constraint Matrix C ===
+        C_top = np.hstack([
+            np.eye(dim_x),
+            -A_list[0],  # Now shape (3, 3)
+            np.zeros((dim_x, dim_theta * (N - 1)))
+        ])
+        C_middle = [
+            np.hstack([
+                np.eye(dim_x),
+                np.zeros((dim_x, dim_theta * i)),
+                -A_list[i],  # Shape (3, 3)
+                np.zeros((dim_x, dim_theta * (N - i - 1)))
+            ])
+            for i in range(1, N)
+        ]
+        C = np.vstack([C_top] + C_middle)  # Shape: (3N, 3 + 3N)
+
+        # === Stack t_centers ===
+        T = np.vstack(t_centers)  # Shape: (3N, 1)
+
+        # === Solve Least Squares (with regularization) ===
+        lambda_val = 0.1  # Adjust based on trust in angles
+        W = np.eye(dim_theta * N)  # Shape: (3N, 3N)
+
+        # Pad W to match C's columns
+        W_padded = np.zeros((W.shape[0], C.shape[1]))  # Shape: (3N, 3 + 3N)
+        W_padded[:, dim_x:] = W  # Only penalize theta terms (last 3N columns)
+
+        C_aug = np.vstack([C, np.sqrt(lambda_val) * W_padded])  # Shape: (6N, 3 + 3N)
+        T_aug = np.vstack([T, np.zeros((dim_theta * N, 1))])  # Shape: (6N, 1)
+
+        X = np.linalg.lstsq(C_aug, T_aug, rcond=None)[0]
+
+        # === Extract Results ===
+        x = X[:dim_x].flatten()  # Common point (3,)
+        thetas = X[dim_x:].reshape(N, dim_theta)  # Angle corrections (N, 3)
+
+        return x, thetas
+
+
+    def image_callback2(self, msg):
         try:
             # Convert ROS Image to OpenCV
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -276,7 +357,7 @@ class ArucoDetector(Node):
         
         
         self.pose_pub.publish(pose_msg)
-        self.get_logger().info(f"Detected Marker {marker_id} at {tvec[0]}")
+        #self.get_logger().info(f"Detected Marker {marker_id} at {tvec[0]}")
         
 
     
