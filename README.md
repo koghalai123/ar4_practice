@@ -89,3 +89,5 @@ Run "surfacePublisher.py" either through ROS2 or simply through python and add t
 # To display the work envelope and find the test cube, some additional packages are needed:
 
 pip install shapely trimesh open3d alphashape descartes numpy-stl "pyglet<2" --break-system-packages
+
+# To start Realsense node: ros2 run realsense2_camera realsense2_camera_node

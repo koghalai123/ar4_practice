@@ -65,8 +65,9 @@ class ArucoDetector(Node):
         cv2.resizeWindow('Aruco Marker Detection', 800, 600)
         
         self.get_logger().info("Aruco Marker Detector node initialized - Press 'q' to quit")
+    
 
-    def image_callback(self, msg):
+    def image_callback2(self, msg):
         try:
             # Convert ROS Image to OpenCV
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -100,7 +101,7 @@ class ArucoDetector(Node):
                     colVec = (self.arucoCols-1)/2 - markerCol[i][0]
 
                     displacementVec = np.array([[(self.marker_size+self.marginSize)*colVec], [-(self.marker_size+self.marginSize)*rowVec], [0]])
-                    R_marker, _ = cv2.Rodrigues(rvecs[i])
+                    R_marker, J = cv2.Rodrigues(rvecs[i])
                     t_center = tvecs[i].reshape(3, 1) + R_marker @ displacementVec
                     t_center = t_center.flatten()       
                     cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
@@ -128,7 +129,8 @@ class ArucoDetector(Node):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     
                     self.publish_pose(rvecs[i], tvecs[i], ids[i][0])
-                
+            poi = optimize_poi(rvecs, tvecs, ids, marker_positions)
+
             # Display the image
             cv2.imshow('Aruco Marker Detection', display_image)
             key = cv2.waitKey(1) & 0xFF
@@ -137,6 +139,118 @@ class ArucoDetector(Node):
             
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
+
+    def image_callback(self, msg):
+        try:
+            # Convert ROS Image to OpenCV
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            display_image = cv_image.copy()
+
+            # Detect markers
+            gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+            corners, ids, rejected = cv2.aruco.detectMarkers(
+                gray, self.aruco_dict, parameters=self.aruco_params)
+
+            if ids is not None:
+                # Estimate pose for each marker
+                rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
+                    corners, self.marker_size, self.camera_matrix, self.dist_coeffs)
+                
+                # Draw detected markers and axes
+                cv2.aruco.drawDetectedMarkers(display_image, corners, ids)
+                
+                # ====== Define marker positions in the sheet frame ======
+                marker_positions = {}
+                for i in range(len(ids)):
+                    marker_id = ids[i][0]
+                    marker_row = np.floor(marker_id / self.arucoCols)
+                    marker_col = marker_id % self.arucoCols
+                    # Convert grid position to 3D coordinates (e.g., 10cm spacing)
+                    x = (marker_col - (self.arucoCols - 1) / 2) * (self.marker_size + self.marginSize)
+                    y = ((self.arucoRows - 1) / 2 - marker_row) * (self.marker_size + self.marginSize)
+                    marker_positions[marker_id] = np.array([x, y, 0])  # Z=0 for flat sheet
+                
+                # ====== Collect t_center observations ======
+                t_centers = []
+                R_markers = []
+                for i in range(len(ids)):
+                    # Compute displacement vector
+                    marker_row = np.floor(ids[i] / self.arucoCols)
+                    marker_col = ids[i] % self.arucoCols
+                    row_vec = (self.arucoRows - 1) / 2 - marker_row
+                    col_vec = (self.arucoCols - 1) / 2 - marker_col
+                    displacement_vec = np.array([
+                        [(self.marker_size + self.marginSize) * col_vec],
+                        [-(self.marker_size + self.marginSize) * row_vec],
+                        [0]
+                    ])
+                    
+                    # Compute t_center (POI in camera frame)
+                    R_marker, _ = cv2.Rodrigues(rvecs[i])
+                    t_center = tvecs[i].reshape(3, 1) + R_marker @ displacement_vec
+                    t_centers.append(t_center.flatten())
+                    R_markers.append(R_marker)
+                    
+                    # Draw axes (existing code)
+                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                                    rvecs[i], tvecs[i], self.marker_size * 0.5)
+                    cv2.drawFrameAxes(display_image, self.camera_matrix, self.dist_coeffs,
+                                    rvecs[i], t_center.flatten(), self.marker_size * 0.5)
+                    
+                    # Publish poses (existing code)
+                    self.publish_pose(rvecs[i], tvecs[i], ids[i][0])
+
+            # ====== Optimize POI ======
+            def optimize_poi(R_markers, t_centers, marker_positions):
+                """
+                Least-squares optimization for the Point of Interest (POI).
+                Args:
+                    R_markers: List of rotation matrices for each marker.
+                    t_centers: List of t_center observations (camera frame).
+                    marker_positions: Dict {id: [x, y, z]} of marker positions in the sheet frame.
+                Returns:
+                    Optimized POI in the sheet frame.
+                """
+                def residuals(p):
+                    res = []
+                    for i, id_ in enumerate(ids):
+                        R_i = R_markers[i]
+                        t_i = t_centers[i].reshape(3, 1)
+                        p_marker = marker_positions[id_[0]].reshape(3, 1)
+                        res.append(t_i - (R_i @ p.reshape(3, 1) + p_marker))
+                    return np.vstack(res).flatten()
+
+                from scipy.optimize import least_squares
+                result = least_squares(
+                    fun=residuals,
+                    x0=np.zeros(3),
+                    method='lm'
+                )
+                return result.x
+
+            poi = optimize_poi(R_markers, t_centers, marker_positions)
+            self.get_logger().info(f"Optimized POI: {poi}")
+
+            # ====== Visualize POI (project into image) ======
+            # Use the first marker's pose to project POI
+            R_first = R_markers[0]
+            t_first = t_centers[0].reshape(3, 1)
+            poi_camera = R_first @ poi.reshape(3, 1) + t_first
+            poi_pixel, _ = cv2.projectPoints(
+                poi_camera, np.zeros(3), np.zeros(3),
+                self.camera_matrix, self.dist_coeffs
+            )
+            cv2.circle(display_image, tuple(poi_pixel[0][0].astype(int)), 10, (0, 0, 255), -1)
+
+            # Display the image
+            cv2.imshow('Aruco Marker Detection', display_image)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                self.shutdown()
+                
+        except Exception as e:
+            self.get_logger().error(f"Error processing image: {str(e)}")
+
 
     def publish_pose(self, rvec, tvec, marker_id):
         # Convert rotation vector to matrix
@@ -164,7 +278,10 @@ class ArucoDetector(Node):
         self.pose_pub.publish(pose_msg)
         self.get_logger().info(f"Detected Marker {marker_id} at {tvec[0]}")
         
-        
+
+    
+
+
 
     def shutdown(self):
         cv2.destroyAllWindows()
