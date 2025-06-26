@@ -53,16 +53,16 @@ poseArrayActual = np.zeros((n, m))
 poseArrayCommanded = np.zeros((n, m))
 poseArrayCalibrated = np.zeros((n, m))
 
-dQMagnitude = 0.1
+dQMagnitude = 0.05
 dQ = np.random.uniform(-dQMagnitude, dQMagnitude, (1, 6))
 joint_positions_actual = joint_positions_commanded + dQ
 
 LMat = np.ones((1, 6))
-dLMagnitude = 0.1
+dLMagnitude = 0.0
 dL = np.random.uniform(-dLMagnitude, dLMagnitude, (1, 6))
 
 XNominal = np.zeros((6))
-dXMagnitude = 0.1
+dXMagnitude = 0.0
 dX = np.random.uniform(-dXMagnitude, dXMagnitude, (1,6))
 XActual = XNominal + dX
 originToBaseActual = get_homogeneous_transform(XActual[0,0:3], XActual[0,3:6], rotation_order='XYZ')
@@ -99,7 +99,7 @@ for i in range(1, 7):
     symbolic_matrices[key] = symbolic_matrix
     #print(i)
 
-numIters = 6
+numIters = 5
 dQMat = np.zeros((numIters, 6))
 dLMat = np.zeros((numIters, 6))
 dXMat = np.zeros((numIters, 6))
@@ -110,9 +110,19 @@ q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
 
 originToWrist = originToBase*baseToWrist
 translation_vector = originToWrist[:3, 3]
+rotation_matrix = originToWrist[:3, :3]
+
+
+pitch = sp.asin(-rotation_matrix[2, 0])  # pitch = arcsin(-r31)
+roll = sp.atan2(rotation_matrix[2, 1], rotation_matrix[2, 2])  # roll = atan2(r32, r33)
+yaw = sp.atan2(rotation_matrix[1, 0], rotation_matrix[0, 0])  # yaw = atan2(r21, r11)
+euler_angles = sp.Matrix([roll, pitch, yaw])
+
+
 vars = list(q) + list(l) + list(x)
 jacobian_translation = translation_vector.jacobian(vars)
-
+#jacobian_rotation = rotation_matrix.reshape(9, 1).jacobian(vars)
+jacobian_rotation = euler_angles.jacobian(vars)
 
 joint_lengths_nominal = LMat.flatten()
 joint_lengths_actual = joint_lengths_nominal + dL.flatten()
@@ -146,8 +156,9 @@ for j in range(0, numIters):
         row = np.concatenate((trans, euler))
         poseArrayActual[i, :] = row
 
-    numJacobian = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
-    
+    numJacobianTrans = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
+    numJacobianRot = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
+
 
 
 
@@ -170,21 +181,34 @@ for j in range(0, numIters):
         trans = np.array(M_num_commanded[:3, 3]).flatten().T
         row = np.concatenate((trans, euler))
         poseArrayCommanded[i, :] = row
-        partials = jacobian_translation.subs({
+        partialsTrans = jacobian_translation.subs({
             **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
             **{l[j]: joint_lengths[j] for j in range(6)},
             **{x[j]: XOffsets[j] for j in range(6)},
         })   
+        partialsRot = jacobian_rotation.subs({
+            **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
+            **{l[j]: joint_lengths[j] for j in range(6)},
+            **{x[j]: XOffsets[j] for j in range(6)},
+        })  
         #print(partials)
-        numJacobian[3*i:3*i+3,:] = np.array(partials).astype(np.float64)
+        numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
+        numJacobianRot[3*i:3*i+3,:] = np.array(partialsRot).astype(np.float64)
 
     translationDifferences = (poseArrayActual-poseArrayCommanded)[:,:3]
+    rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
     accuracyError= np.linalg.norm(translationDifferences, axis=1)
     avgAccuracyError = np.mean(accuracyError)
     avgAccMat[j,0] = avgAccuracyError
 
+    '''#For only measuring translation differences
     bMat = translationDifferences.flatten()
-    AMat = numJacobian
+    AMat = numJacobianTrans'''
+    
+    #For measuring only rotational differences
+    bMat = rotationalDifferences.flatten()
+    AMat = numJacobianRot
+    
     errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
 
     dQEst = errorEstimates[0:6]
