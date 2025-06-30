@@ -232,7 +232,7 @@ for j in range(0, numIters):
     AMat = numJacobianRot'''
     
     translation_weight = 1.0  # Weight for translational errors
-    rotation_weight = 1.0     # Weight for rotational errors
+    rotation_weight = 10.0     # Weight for rotational errors
     
     # Scale translational and rotational differences
     scaled_translation_differences = translation_weight * translationDifferences.flatten()
