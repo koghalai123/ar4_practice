@@ -44,7 +44,7 @@ def get_homogeneous_transform(xyz, euler_angles, rotation_order='XYZ'):
     
     return transform
 
-n = 20
+n = 7
 m = 6
 noiseMagnitude = 0.00
 
@@ -53,7 +53,7 @@ poseArrayActual = np.zeros((n, m))
 poseArrayCommanded = np.zeros((n, m))
 poseArrayCalibrated = np.zeros((n, m))
 
-dQMagnitude = 0.05
+dQMagnitude = 0.15
 dQ = np.random.uniform(-dQMagnitude, dQMagnitude, (1, 6))
 joint_positions_actual = joint_positions_commanded + dQ
 
@@ -99,7 +99,7 @@ for i in range(1, 7):
     symbolic_matrices[key] = symbolic_matrix
     #print(i)
 
-numIters = 5
+numIters = 8
 dQMat = np.zeros((numIters, 6))
 dLMat = np.zeros((numIters, 6))
 dXMat = np.zeros((numIters, 6))
@@ -121,8 +121,11 @@ euler_angles = sp.Matrix([roll, pitch, yaw])
 
 vars = list(q) + list(l) + list(x)
 jacobian_translation = translation_vector.jacobian(vars)
-#jacobian_rotation = rotation_matrix.reshape(9, 1).jacobian(vars)
-jacobian_rotation = euler_angles.jacobian(vars)
+#jacobian_rotation = euler_angles.jacobian(vars)
+
+
+rotation_matrix_flat = rotation_matrix.reshape(9, 1)
+jacobian_rotation = rotation_matrix_flat.jacobian(vars)
 
 joint_lengths_nominal = LMat.flatten()
 joint_lengths_actual = joint_lengths_nominal + dL.flatten()
@@ -149,15 +152,13 @@ for j in range(0, numIters):
         **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
         }) '''
         rot_matrix = M_num_actual[:3, :3]
-        r = R.from_matrix(rot_matrix)
-        #quat = r.as_quat()
-        euler = r.as_euler('xyz')
         trans = np.array(M_num_actual[:3, 3]).flatten().T
-        row = np.concatenate((trans, euler))
+        #row = np.concatenate((trans, rot_matrix.flatten()))
+        row = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
         poseArrayActual[i, :] = row
 
     numJacobianTrans = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
-    numJacobianRot = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
+    numJacobianRot = np.ones((9*joint_positions_commanded.shape[0], len(vars)))
 
 
 
@@ -175,11 +176,8 @@ for j in range(0, numIters):
             **{x[j]: XOffsets[j] for j in range(6)},
         })   
         rot_matrix = M_num_commanded[:3, :3]
-        r = R.from_matrix(rot_matrix)
-        #quat = r.as_quat()
-        euler = r.as_euler('xyz')
         trans = np.array(M_num_commanded[:3, 3]).flatten().T
-        row = np.concatenate((trans, euler))
+        row = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
         poseArrayCommanded[i, :] = row
         partialsTrans = jacobian_translation.subs({
             **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
@@ -193,10 +191,32 @@ for j in range(0, numIters):
         })  
         #print(partials)
         numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
-        numJacobianRot[3*i:3*i+3,:] = np.array(partialsRot).astype(np.float64)
+        numJacobianRot[9*i:9*i+9,:] = np.array(partialsRot).astype(np.float64)
 
     translationDifferences = (poseArrayActual-poseArrayCommanded)[:,:3]
-    rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
+    #rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
+    
+    rotationalDifferences = []
+    for i in range(poseArrayActual.shape[0]):
+        # Extract Euler angles for the current pose
+        euler_actual = poseArrayActual[i, 3:6]
+        euler_commanded = poseArrayCommanded[i, 3:6]
+
+        # Convert Euler angles to rotation matrices
+        R_actual = R.from_euler('xyz', euler_actual).as_matrix()
+        R_commanded = R.from_euler('xyz', euler_commanded).as_matrix()
+
+        # Compute the difference between the rotation matrices
+        R_diff = R_actual - R_commanded
+
+        # Flatten the difference matrix
+        R_diff_flat = R_diff.flatten()
+        rotationalDifferences.append(R_diff_flat)
+
+    # Convert rotationalDifferences to a NumPy array
+    rotationalDifferences = np.array(rotationalDifferences).reshape(-1, 9)
+    
+    
     accuracyError= np.linalg.norm(translationDifferences, axis=1)
     avgAccuracyError = np.mean(accuracyError)
     avgAccMat[j,0] = avgAccuracyError
@@ -206,7 +226,7 @@ for j in range(0, numIters):
     AMat = numJacobianTrans'''
     
     #For measuring only rotational differences
-    bMat = rotationalDifferences.flatten()
+    bMat = rotationalDifferences.ravel()
     AMat = numJacobianRot
     
     errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
@@ -219,9 +239,10 @@ for j in range(0, numIters):
     dXMat[j, :] = dXEst
     print("Iteration: ", j)
     print("Avg Accuracy Error: ", avgAccuracyError)
-    print("dLEst: ", dLEst)
-    print("dQEst: ", dQEst)
-    print("dXEst: ", dXEst)
+    print("dLEst: ", np.sum(dLMat,axis=0))
+    print("dQAct: ", dQ)
+    print("dQEst: ", np.sum(dQMat,axis=0))
+    print("dXEst: ", np.sum(dXMat,axis=0))
     print("")
 
 
