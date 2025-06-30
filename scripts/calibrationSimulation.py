@@ -103,7 +103,7 @@ numIters = 8
 dQMat = np.zeros((numIters, 6))
 dLMat = np.zeros((numIters, 6))
 dXMat = np.zeros((numIters, 6))
-avgAccMat = np.ones((numIters,1))
+avgAccMat = np.ones((numIters,2))
 
 
 q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
@@ -220,8 +220,13 @@ for j in range(0, numIters):
     
     
     accuracyError= np.linalg.norm(translationDifferences, axis=1)
+    rotationalError= np.linalg.norm(rotationalDifferences, axis=1)
+    avgRotationalError = np.mean(rotationalError)
     avgAccuracyError = np.mean(accuracyError)
-    avgAccMat[j,0] = avgAccuracyError
+    avgTransAndRotError = (np.array([avgAccuracyError, avgRotationalError]))
+    avgAccMat[j,:] = avgTransAndRotError
+    
+    
 
     '''#For only measuring translation differences
     bMat = translationDifferences.flatten()
@@ -253,7 +258,7 @@ for j in range(0, numIters):
     dXEst = errorEstimates[12:18]
     dXMat[j, :] = dXEst
     print("Iteration: ", j)
-    print("Avg Accuracy Error: ", avgAccuracyError)
+    print("Avg Pose Error: ", avgTransAndRotError)
     print("dLEst: ", np.sum(dLMat,axis=0))
     print("dQAct: ", dQ)
     print("dQEst: ", np.sum(dQMat,axis=0))
