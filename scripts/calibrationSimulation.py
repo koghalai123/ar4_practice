@@ -85,8 +85,8 @@ def symbolic_transform_with_ref_frames(xyz, euler_angles, rotation_order='XYZ'):
     
     return T
 
-originToBase = symbolic_transform_with_ref_frames(x[0:3], x[3:6], rotation_order='XYZ')
-
+#originToBase = symbolic_transform_with_ref_frames(x[0:3], x[3:6], rotation_order='XYZ')
+originToBase = symbolic_transform_with_ref_frames(x[0:3], [0,0,0], rotation_order='XYZ')
 for i in range(1, 7):
     key = "Joint" + str(i)
     symbolic_matrix = symbolic_matrices[key]
@@ -121,7 +121,7 @@ euler_angles = sp.Matrix([roll, pitch, yaw])
 
 vars = list(q) + list(l) + list(x)
 jacobian_translation = translation_vector.jacobian(vars)
-#jacobian_rotation = euler_angles.jacobian(vars)
+jacobian_rotation = euler_angles.jacobian(vars)
 
 
 rotation_matrix_flat = rotation_matrix.reshape(9, 1)
@@ -158,7 +158,9 @@ for j in range(0, numIters):
         poseArrayActual[i, :] = row
 
     numJacobianTrans = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
-    numJacobianRot = np.ones((9*joint_positions_commanded.shape[0], len(vars)))
+    
+    rotCount = 9
+    numJacobianRot = np.ones((rotCount*joint_positions_commanded.shape[0], len(vars)))
 
 
 
@@ -191,10 +193,10 @@ for j in range(0, numIters):
         })  
         #print(partials)
         numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
-        numJacobianRot[9*i:9*i+9,:] = np.array(partialsRot).astype(np.float64)
+        numJacobianRot[rotCount*i:rotCount*i+rotCount,:] = np.array(partialsRot).astype(np.float64)
 
     translationDifferences = (poseArrayActual-poseArrayCommanded)[:,:3]
-    #rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
+    rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
     
     rotationalDifferences = []
     for i in range(poseArrayActual.shape[0]):
@@ -227,6 +229,7 @@ for j in range(0, numIters):
     
     #For measuring only rotational differences
     bMat = rotationalDifferences.ravel()
+    #bMat = rotationalDifferences.flatten()
     AMat = numJacobianRot
     
     errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
