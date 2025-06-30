@@ -225,12 +225,24 @@ for j in range(0, numIters):
 
     '''#For only measuring translation differences
     bMat = translationDifferences.flatten()
-    AMat = numJacobianTrans'''
+    AMat = numJacobianTrans
     
     #For measuring only rotational differences
     bMat = rotationalDifferences.ravel()
-    #bMat = rotationalDifferences.flatten()
-    AMat = numJacobianRot
+    AMat = numJacobianRot'''
+    
+    translation_weight = 1.0  # Weight for translational errors
+    rotation_weight = 1.0     # Weight for rotational errors
+    
+    # Scale translational and rotational differences
+    scaled_translation_differences = translation_weight * translationDifferences.flatten()
+    scaled_rotational_differences = rotation_weight * rotationalDifferences.ravel()
+
+    # Combine scaled errors into a single error vector
+    bMat = np.concatenate((scaled_translation_differences, scaled_rotational_differences))
+
+    # Combine Jacobians into a single Jacobian matrix
+    AMat = np.vstack((translation_weight * numJacobianTrans, rotation_weight * numJacobianRot))
     
     errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
 
