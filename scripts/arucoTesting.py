@@ -68,23 +68,26 @@ class ArucoPoseEstimator(Node):
         """Get median depth value at marker corners"""
         if self.depth_image is None:
             return None
-            
+
         points = corners.reshape(-1, 2)
         depths = []
-        
+
         for (u, v) in points:
             u, v = int(round(u)), int(round(v))
             if 0 <= u < self.depth_image.shape[1] and 0 <= v < self.depth_image.shape[0]:
-                depth = self.depth_image[v, u] * self.depth_scale
-                if depth > 0:  # Valid measurement
-                    depths.append(depth)
-        
-        return np.median(depths) if depths else None
+                # Extract a small region around the corner
+                region = self.depth_image[max(0, v-2):v+3, max(0, u-2):u+3]
+                valid_depths = region[region > 0] * self.depth_scale  # Ignore invalid (zero) depths
+                if valid_depths.size > 0:
+                    depths.append(np.median(valid_depths))  # Use the median of the region
+
+        # Return the median of all valid depths
+        return np.median(depths) if len(depths) > 2 else None  # Require at least 3 valid depths
 
     def format_pose(self, t, r, prefix=""):
         """Format pose for display"""
-        return (f"{prefix}X: {float(t[0]):.1f}cm Y: {float(t[1]):.1f}cm Z: {float(t[2]):.1f}cm\n"
-                f"{prefix}Roll: {float(r[0]):.1f}° Pitch: {float(r[1]):.1f}° Yaw: {float(r[2]):.1f}°")
+        return (f"{prefix}X: {float(t[0]):.2f}cm Y: {float(t[1]):.2f}cm Z: {float(t[2]):.2f}cm\n"
+                f"{prefix}Roll: {float(r[0]):.2f}° Pitch: {float(r[1]):.2f}° Yaw: {float(r[2]):.2f}°")
 
     def image_callback(self, msg):
         if self.depth_image is None:
@@ -134,7 +137,7 @@ class ArucoPoseEstimator(Node):
 
             # 3. Kalman-filtered pose
             self.kf.predict()
-            self.kf.update(depth_enhanced_pose)
+            self.kf.update(raw_pose)
             kalman_pose = self.kf.x
 
             # Visualization
@@ -165,14 +168,14 @@ class ArucoPoseEstimator(Node):
                 
                 # Position
                 cv2.putText(
-                    text_bg, f"  Pos: {float(t[0]):.1f}, {float(t[1]):.1f}, {float(t[2]):.1f} cm",
+                    text_bg, f"  Pos: {float(t[0]):.2f}, {float(t[1]):.2f}, {float(t[2]):.2f} cm",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.method_colors[i], 1
                 )
                 y_offset += 20
                 
                 # Rotation
                 cv2.putText(
-                    text_bg, f"  Rot: {float(r[0]):.1f}, {float(r[1]):.1f}, {float(r[2]):.1f} deg",
+                    text_bg, f"  Rot: {float(r[0]):.2f}, {float(r[1]):.2f}, {float(r[2]):.2f} deg",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.method_colors[i], 1
                 )
                 y_offset += 30
