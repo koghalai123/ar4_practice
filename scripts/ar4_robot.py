@@ -32,9 +32,9 @@ class AR4_ROBOT(Node):
         self.use_joint_positions = use_joint_positions
         
         if self.use_joint_positions:
-            self.get_logger().info("Joint commander initialized. Ready to accept joint configurations.")
+            self.get_logger().info("Joint commander initialized. Waiting for connection to Gazebo/Physical Robot.")
         else:
-            self.get_logger().info("Pose commander initialized. Ready to accept target positions.")
+            self.get_logger().info("Pose commander initialized. Waiting for connection to Gazebo/Physical Robot.")
 
         # Reference transformation for the end effector
         self.reference_translation = [0.0, 0.0, 0.0]  # Example translation (x, y, z)
@@ -122,7 +122,7 @@ class AR4_ROBOT(Node):
         orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
 
         self.moveit2.move_to_pose(position=Point(x=transformed_position[0], y=transformed_position[1], z=transformed_position[2]), quat_xyzw=orientation)
-
+        self.moveit2.wait_until_executed()
 
     def move_to_joint_positions(self, joint_positions):
         """Move to specific joint positions."""
