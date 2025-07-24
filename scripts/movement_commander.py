@@ -72,10 +72,11 @@ class MoveItCommander(Node):
             np.dot(self.transformation_matrix[:3, :3], euler_matrix(roll, pitch, yaw, axes='sxyz')[:3, :3]),
             axes='sxyz'  # Example alternative axes order
         )
+        self.transformedOrientation = transformed_orientation
         globalOrientation = [transformed_orientation[1] + self.angle_offsets["roll"],
                              transformed_orientation[0] + self.angle_offsets["pitch"], 
                              transformed_orientation[2] + self.angle_offsets["yaw"]]
-
+        self.globalOrientation = globalOrientation
         # Print transformed pose
         self.get_logger().info("\nTransformed End Effector Pose:")
         self.get_logger().info(f"Position: x={transformed_position[0]:.3f}, y={transformed_position[1]:.3f}, z={transformed_position[2]:.3f}")
@@ -107,9 +108,10 @@ class MoveItCommander(Node):
                     position = np.array([values[0], values[1], values[2], 1.0])
                     transformed_position = np.dot(self.inverse_transformation_matrix, position)[:3]
 
+                    roll, pitch, yaw = values[4], values[3], values[5]
                     
-                    roll = values[4] - self.angle_offsets["roll"]
-                    pitch = values[3] - self.angle_offsets["pitch"]
+                    roll = values[4] - self.angle_offsets["pitch"]
+                    pitch = values[3] - self.angle_offsets["roll"]
                     yaw = values[5] - self.angle_offsets["yaw"]
                     
                     transformed_orientation_matrix = np.dot(self.inverse_transformation_matrix[:3, :3], euler_matrix(roll, pitch, yaw, axes='sxyz')[:3, :3])
