@@ -6,6 +6,8 @@ from pymoveit2 import MoveIt2
 from geometry_msgs.msg import Point, Quaternion, Pose, PoseStamped
 import argparse
 from tf_transformations import quaternion_from_euler, euler_from_quaternion  # Import for Euler/Quaternion conversion
+import numpy as np
+from tf_transformations import euler_matrix, euler_from_matrix
 
 class MoveItCommander(Node):
     def __init__(self, use_joint_positions):
@@ -29,9 +31,20 @@ class MoveItCommander(Node):
         else:
             self.get_logger().info("Pose commander initialized. Ready to accept target positions.")
 
+        # Reference transformation for the end effector
+        self.reference_translation = [0.0, 0.0, 0.0]  # Example translation (x, y, z)
+        self.reference_rotation = [0.0, 0.0, np.pi *1/2]  # Example rotation (roll, pitch, yaw)
+        self.transformation_matrix = create_transformation_matrix(self.reference_translation, self.reference_rotation)
+        self.inverse_transformation_matrix = np.linalg.inv(self.transformation_matrix)
+
+        self.angle_offsets = {
+            "roll": 0,  # Example offset in radians
+            "pitch": 1.571,
+            "yaw": 1.571
+        }
+
     def get_current_pose(self):
-        """Get the current end effector pose and print it"""
-        # Compute forward kinematics for the end effector
+        """Get the current end effector pose and print it."""
         fk_result = self.moveit2.compute_fk()
         
         if fk_result is None:
@@ -42,8 +55,8 @@ class MoveItCommander(Node):
             current_pose = fk_result[0]  # Take first result if multiple
         else:
             current_pose = fk_result
-            
-        # Convert quaternion to Euler angles for more intuitive display
+
+        # Convert quaternion to Euler angles
         quat = [
             current_pose.pose.orientation.x,
             current_pose.pose.orientation.y,
@@ -51,14 +64,24 @@ class MoveItCommander(Node):
             current_pose.pose.orientation.w
         ]
         roll, pitch, yaw = euler_from_quaternion(quat)
+
+        # Apply transformation to the pose
+        position = np.array([current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z, 1.0])
+        transformed_position = np.dot(self.transformation_matrix, position)[:3]
+        transformed_orientation = euler_from_matrix(
+            np.dot(self.transformation_matrix[:3, :3], euler_matrix(roll, pitch, yaw, axes='sxyz')[:3, :3]),
+            axes='sxyz'  # Example alternative axes order
+        )
+        globalOrientation = [transformed_orientation[1] + self.angle_offsets["roll"],
+                             transformed_orientation[0] + self.angle_offsets["pitch"], 
+                             transformed_orientation[2] + self.angle_offsets["yaw"]]
+
+        # Print transformed pose
+        self.get_logger().info("\nTransformed End Effector Pose:")
+        self.get_logger().info(f"Position: x={transformed_position[0]:.3f}, y={transformed_position[1]:.3f}, z={transformed_position[2]:.3f}")
+        self.get_logger().info(f"Orientation (Euler RPY): roll={globalOrientation[0]:.3f}, pitch={globalOrientation[1]:.3f}, yaw={globalOrientation[2]:.3f}")
         
-        # Print current pose information
-        self.get_logger().info("\nCurrent End Effector Pose:")
-        self.get_logger().info(f"Position: x={current_pose.pose.position.x:.3f}, y={current_pose.pose.position.y:.3f}, z={current_pose.pose.position.z:.3f}")
-        self.get_logger().info(f"Orientation (Quaternion): x={current_pose.pose.orientation.x:.3f}, y={current_pose.pose.orientation.y:.3f}, z={current_pose.pose.orientation.z:.3f}, w={current_pose.pose.orientation.w:.3f}")
-        self.get_logger().info(f"Orientation (Euler RPY): roll={roll:.3f}, pitch={pitch:.3f}, yaw={yaw:.3f}")
-        
-        return current_pose
+        return transformed_position, transformed_orientation
 
     def run(self):
         while rclpy.ok():
@@ -81,19 +104,33 @@ class MoveItCommander(Node):
                         self.get_logger().error("Please enter exactly 6 values (position x,y,z and orientation roll,pitch,yaw)")
                         continue
                     
-                    position = Point(x=values[0], y=values[1], z=values[2])
-                    roll, pitch, yaw = values[3], values[4], values[5]
+                    position = np.array([values[0], values[1], values[2], 1.0])
+                    transformed_position = np.dot(self.inverse_transformation_matrix, position)[:3]
+
                     
-                    # Convert Euler angles to quaternion
-                    quat = quaternion_from_euler(roll, pitch, yaw)
+                    roll = values[4] - self.angle_offsets["roll"]
+                    pitch = values[3] - self.angle_offsets["pitch"]
+                    yaw = values[5] - self.angle_offsets["yaw"]
+                    
+                    transformed_orientation_matrix = np.dot(self.inverse_transformation_matrix[:3, :3], euler_matrix(roll, pitch, yaw, axes='sxyz')[:3, :3])
+                    transformed_orientation = euler_from_matrix(transformed_orientation_matrix)
+
+                    # Convert transformed orientation to quaternion
+                    quat = quaternion_from_euler(transformed_orientation[0], transformed_orientation[1], transformed_orientation[2])
                     orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
-                    
-                    self.moveit2.move_to_pose(position=position, quat_xyzw=orientation)
+
+                    self.moveit2.move_to_pose(position=Point(x=transformed_position[0], y=transformed_position[1], z=transformed_position[2]), quat_xyzw=orientation)
                 
                 self.moveit2.wait_until_executed()
                 
             except Exception as e:
                 self.get_logger().error(f"Error: {e}")
+
+def create_transformation_matrix(translation, euler_angles):
+    """Create a 4x4 homogeneous transformation matrix."""
+    transform = euler_matrix(euler_angles[0], euler_angles[1], euler_angles[2], axes='sxyz')
+    transform[:3, 3] = translation
+    return transform
 
 def main(args=None):
     rclpy.init(args=args)
@@ -105,7 +142,8 @@ def main(args=None):
     args = parser.parse_args()
     
     # Default to joint control if neither flag is set
-    use_joint_positions = args.joint or not args.pose
+    #use_joint_positions = args.joint or not args.pose
+    use_joint_positions = args.pose or args.joint
     
     commander = MoveItCommander(use_joint_positions)
     commander.run()
