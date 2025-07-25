@@ -15,7 +15,7 @@ def main(args=None):
     for i in range(10):
         try:
             random_numbers = np.random.rand(3) 
-            random_pos = (random_numbers-0.5)*0.3
+            random_pos = (random_numbers-0.5)*0.1
             xOffset = 0
             yOffset = 0
             zOffset = robot.pos_offsets["z"]
