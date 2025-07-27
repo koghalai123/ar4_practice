@@ -103,7 +103,7 @@ class SurfacePublisher(Node):
         self.marker_pub.publish(marker_array)
 
     def publish_arrow(self, position=np.array([0, 0, 0]), orientation=np.array([0, 0, 0]), 
-                  length=0.2, id=0, color=np.array([0.0, 1.0, 0.0])):
+                  length=0.2, thickness=0.02, id=0, color=np.array([0.0, 1.0, 0.0])):
         """
         Publish an arrow marker to RViz with specified position and orientation
         
@@ -129,16 +129,18 @@ class SurfacePublisher(Node):
         marker.pose.position.z = position[2]
         
         # Set orientation from euler angles
-        quat = quaternion_from_euler(orientation[0], orientation[1], orientation[2],axes='sxyz')
+        quat = quaternion_from_euler(orientation[0], orientation[1], orientation[2],axes='szxy')
         marker.pose.orientation.x = quat[0]
         marker.pose.orientation.y = quat[1]
         marker.pose.orientation.z = quat[2]
         marker.pose.orientation.w = quat[3]
-        
+
         # Set the scale - controls the size of the arrow
-        marker.scale.x = length      # Arrow length
-        marker.scale.y = length/10.0  # Arrow head width
-        marker.scale.z = length/10.0  # Arrow head height
+        marker.scale.x = length      # Shaft diameter
+        marker.scale.y = thickness*2.0  # Head diameter
+        marker.scale.z = thickness*3.0  # Head length
+        
+        
         
         # Set color (RGBA, 0-1)
         marker.color.r = color[0]
@@ -165,4 +167,60 @@ class SurfacePublisher(Node):
         # Publish the marker array
         self.marker_pub.publish(self.arrow_markers)
         
+        return marker
+    
+    def publish_arrow_between_points(self, start=np.array([0, 0, 0]), end=np.array([1, 0, 0]), 
+                               thickness=0.02, id=0, color=np.array([0.0, 1.0, 0.0])):
+        """
+        Publish an arrow marker to RViz between two points
+    
+        Args:
+            start: np.array([x, y, z]) - Starting point of the arrow
+            end: np.array([x, y, z]) - Ending point of the arrow
+            thickness: float - Thickness of the arrow shaft
+            id: int - Unique marker ID
+            color: np.array([r, g, b]) - RGB color (0-1 range)
+        """
+        marker = Marker()
+        marker.header.frame_id = "base_link"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "arrows_between_points"
+        marker.id = id
+    
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+    
+        # For arrows between points, we use the points field instead of pose
+        marker.points.append(Point(x=start[0], y=start[1], z=start[2]))
+        marker.points.append(Point(x=end[0], y=end[1], z=end[2]))
+    
+        # Set the scale - controls the size of the arrow
+        marker.scale.x = thickness      # Shaft diameter
+        marker.scale.y = thickness*2.0  # Head diameter
+        marker.scale.z = thickness*3.0  # Head length
+    
+        # Set color (RGBA, 0-1)
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = 1.0  # Fully opaque
+    
+        # Create a marker array if it doesn't exist
+        if not hasattr(self, 'arrows_between_points_markers'):
+            self.arrows_between_points_markers = MarkerArray()
+    
+        # Add or update the marker in the array
+        found = False
+        for i, m in enumerate(self.arrows_between_points_markers.markers):
+            if m.id == id and m.ns == "arrows_between_points":
+                self.arrows_between_points_markers.markers[i] = marker
+                found = True
+                break
+    
+        if not found:
+            self.arrows_between_points_markers.markers.append(marker)
+    
+        # Publish the marker array
+        self.marker_pub.publish(self.arrows_between_points_markers)
+    
         return marker
