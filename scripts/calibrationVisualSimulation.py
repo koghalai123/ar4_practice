@@ -40,7 +40,36 @@ def print_current_position(robot,frame):
     position, orientation = current_pose
     robot.get_logger().info(f"Current Pose: Position={position}, Orientation={orientation}")
 
-
+def camera_vector_from_pose_and_measurement(roll, pitch, yaw, distance):
+    """
+    Calculate a vector to target given orientation angles and distance.
+    
+    Parameters:
+    - roll: Roll angle in radians
+    - pitch: Pitch angle in radians
+    - yaw: Yaw angle in radians
+    - distance: Distance to the target
+    
+    Returns:
+    - numpy array [x, y, z]: Vector pointing to the target
+    """
+    # First, understand the relationship between the angles and the direction vector
+    # If we have pitch = -arctan2(x, z) - π/2, then x/z = -tan(pitch + π/2)
+    # Similarly for roll = -arctan2(y, r), where r = sqrt(x^2 + z^2), then y/r = -tan(roll)
+    
+    # Calculate the vector components based on the spherical coordinates
+    x_direction = -np.sin(pitch + np.pi/2) * np.cos(roll)
+    y_direction = -np.sin(roll) * np.cos(pitch + np.pi/2)
+    z_direction = np.cos(pitch + np.pi/2) * np.cos(roll)
+    
+    # Normalize the direction vector
+    direction = np.array([x_direction, y_direction, z_direction])
+    direction = direction / np.linalg.norm(direction)
+    
+    # Scale by the distance
+    vector = direction * distance
+    
+    return vector
 
 def main(args=None):
     rclpy.init(args=args)
@@ -69,14 +98,21 @@ def main(args=None):
             while counter < 10:
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
             
-                targetPos = np.array([globalHomePos[0], globalHomePos[1], 0])
-                globalEndEffectorPos = relativeToHomePos+globalHomePos
-                vectorToTarget = globalEndEffectorPos-targetPos
-                roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], vectorToTarget[1], vectorToTarget[2])
-
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.fromMyPreferredFrame(targetPos, np.array([0,0,0]), reference_frame="base_link")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(globalEndEffectorPos, np.array([roll,pitch,yaw]), reference_frame="base_link")
                 
+                targetPosBelieved = np.array([globalHomePos[0], globalHomePos[1], 0])
+                targetPosActual = targetPosBelieved + np.array([0.05,0.05,0.05])
+                globalEndEffectorPos = relativeToHomePos+globalHomePos
+                vectorToTarget = globalEndEffectorPos-targetPosActual
+                roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], vectorToTarget[1], vectorToTarget[2])
+                
+                distanceToTarget = np.linalg.norm(vectorToTarget)
+                calculatedVector = camera_vector_from_pose_and_measurement(roll, pitch, yaw, distanceToTarget)
+                measuredGlobalEndEffectorPos = targetPosBelieved + calculatedVector
+
+                targetPosWeirdFrame, targetOrientWeirdFrame = robot.fromMyPreferredFrame(targetPosActual, np.array([0,0,0]), reference_frame="base_link")
+                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(globalEndEffectorPos, np.array([roll,pitch,yaw]), reference_frame="base_link")
+                measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(measuredGlobalEndEffectorPos, np.array([roll,pitch,yaw]), reference_frame="base_link")
+
                 marker_publisher.publishPlane(np.array([0.146]),targetPosWeirdFrame)
 
                 marker_publisher.publish_arrow_between_points(
@@ -98,7 +134,7 @@ def main(args=None):
 
 
             #actual, commanded = simulator.generate_measurement(i)
-            actual = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
+            actual = np.concatenate((measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame))
             commanded = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
             if actual is not None and commanded is not None:
                 measurements_actual[valid_measurements] = actual
