@@ -19,133 +19,150 @@ import csv
 from scipy.spatial.transform import Rotation as R
 import pandas as pd
 
-symbolic_matrices = {}
-
-fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
-for fileName in fileNameList:
-    with open(fileName, "r") as f:
-        reader = csv.reader(f)
-        header = next(reader)  # Skip header if present
-        data = [row for row in reader]
-
-    # Convert to SymPy Matrix
-    symbolic_matrix = sp.Matrix([[sp.sympify(cell) for cell in row] for row in data])
-    # Store in dictionary with key based on file name (without .csv)
-    key = fileName.replace(".csv", "")
-    symbolic_matrices[key] = symbolic_matrix
-
-#print(symbolic_matrices["Joint1"])
-def get_homogeneous_transform(xyz, euler_angles, rotation_order='XYZ'):
-    rotation = R.from_euler(rotation_order, euler_angles)
-    rot_mat = rotation.as_matrix()
-    transform = np.eye(4)
-    transform[:3, :3] = rot_mat
-    transform[:3, 3] = xyz
+class CalibrationConvergenceSimulator:
+    def __init__(self):
+        self.n = 7
+        self.m = 6
+        self.noiseMagnitude = 0.00
+        
+        self.joint_positions_commanded = np.random.uniform(-3, 3, (self.n, 6))
+        self.poseArrayActual = np.zeros((self.n, self.m))
+        self.poseArrayCommanded = np.zeros((self.n, self.m))
+        self.poseArrayCalibrated = np.zeros((self.n, self.m))
+        
+        self.dQMagnitude = 0.15
+        self.dQ = np.random.uniform(-self.dQMagnitude, self.dQMagnitude, (1, 6))
+        self.joint_positions_actual = self.joint_positions_commanded + self.dQ
+        
+        self.LMat = np.ones((1, 6))
+        self.dLMagnitude = 0.0
+        self.dL = np.random.uniform(-self.dLMagnitude, self.dLMagnitude, (1, 6))
+        
+        self.XNominal = np.zeros((6))
+        self.dXMagnitude = 0.0
+        self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))
+        self.XActual = self.XNominal + self.dX
+        
+        self.numIters = 8
+        self.dQMat = np.zeros((self.numIters, 6))
+        self.dLMat = np.zeros((self.numIters, 6))
+        self.dXMat = np.zeros((self.numIters, 6))
+        self.avgAccMat = np.ones((self.numIters,2))
+        
+        self.symbolic_matrices = self.loadSymbolicTransforms()
+        self.baseToWrist = sp.eye(4)
+        self.wristToBase = sp.eye(4)
+        self.l = sp.symbols('l1:7')
+        self.x = sp.symbols('x1:7')
+        self.q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
+        
+        # Current iteration index
+        self.current_iter = 0
+        
+        self.setup_kinematics()
+        
+    def loadSymbolicTransforms(self):
+        symbolic_matrices = {}
+        
+        fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
+        for fileName in fileNameList:
+            with open(fileName, "r") as f:
+                reader = csv.reader(f)
+                header = next(reader)  # Skip header if present
+                data = [row for row in reader]
+                
+            # Convert to SymPy Matrix
+            symbolic_matrix = sp.Matrix([[sp.sympify(cell) for cell in row] for row in data])
+            # Store in dictionary with key based on file name (without .csv)
+            key = fileName.replace(".csv", "")
+            symbolic_matrices[key] = symbolic_matrix
+        return symbolic_matrices
+        
+    def get_homogeneous_transform(self, xyz, euler_angles, rotation_order='XYZ'):
+        rotation = R.from_euler(rotation_order, euler_angles)
+        rot_mat = rotation.as_matrix()
+        transform = np.eye(4)
+        transform[:3, :3] = rot_mat
+        transform[:3, 3] = xyz
+        
+        return transform
+        
+    def symbolic_transform_with_ref_frames(self, xyz, euler_angles, rotation_order='XYZ'):
+        N = ReferenceFrame('N')  # World frame
+        B = N.orientnew('B', 'Body', euler_angles, rotation_order)
+        
+        R = N.dcm(B)
+        
+        T = eye(4)
+        T[:3, :3] = R.T  # Transpose to get rotation from B to N
+        T[:3, 3] = xyz
+        
+        return T
+        
+    def setup_kinematics(self):
+        self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [0,0,0], rotation_order='XYZ')
+        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0,0:3], self.XActual[0,3:6], rotation_order='XYZ')
+        
+        for i in range(1, 7):
+            key = "Joint" + str(i)
+            symbolic_matrix = self.symbolic_matrices[key]
+            translation_vector = symbolic_matrix[:3, 3]
+            norm_symbolic = sp.sqrt(sum(component**2 for component in translation_vector))
+            self.LMat[0, i - 1] = norm_symbolic
+            symbolic_matrix[:3,3]=symbolic_matrix[:3,3]*self.l[i-1]
+            self.baseToWrist = self.baseToWrist * symbolic_matrix
+            self.wristToBase = symbolic_matrix.inv() * self.wristToBase
+            self.symbolic_matrices[key] = symbolic_matrix
+            
+        self.originToWrist = self.originToBase*self.baseToWrist
+        self.translation_vector = self.originToWrist[:3, 3]
+        self.rotation_matrix = self.originToWrist[:3, :3]
+        
+        self.pitch = sp.asin(-self.rotation_matrix[2, 0])
+        self.roll = sp.atan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
+        self.yaw = sp.atan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
+        self.euler_angles = sp.Matrix([self.roll, self.pitch, self.yaw])
+        
+        vars = list(self.q) + list(self.l) + list(self.x)
+        self.jacobian_translation = self.translation_vector.jacobian(vars)
+        
+        self.rotation_matrix_flat = self.rotation_matrix.reshape(9, 1)
+        self.jacobian_rotation = self.rotation_matrix_flat.jacobian(vars)
+        
+        self.joint_lengths_nominal = self.LMat.flatten()
+        self.joint_lengths_actual = self.joint_lengths_nominal + self.dL.flatten()
     
-    return transform
-
-n = 7
-m = 6
-noiseMagnitude = 0.00
-
-joint_positions_commanded = np.random.uniform(-3, 3, (n, 6))
-poseArrayActual = np.zeros((n, m))
-poseArrayCommanded = np.zeros((n, m))
-poseArrayCalibrated = np.zeros((n, m))
-
-dQMagnitude = 0.15
-dQ = np.random.uniform(-dQMagnitude, dQMagnitude, (1, 6))
-joint_positions_actual = joint_positions_commanded + dQ
-
-LMat = np.ones((1, 6))
-dLMagnitude = 0.0
-dL = np.random.uniform(-dLMagnitude, dLMagnitude, (1, 6))
-
-XNominal = np.zeros((6))
-dXMagnitude = 0.0
-dX = np.random.uniform(-dXMagnitude, dXMagnitude, (1,6))
-XActual = XNominal + dX
-originToBaseActual = get_homogeneous_transform(XActual[0,0:3], XActual[0,3:6], rotation_order='XYZ')
-
-baseToWrist = sp.eye(4)
-wristToBase = sp.eye(4)
-l = sp.symbols('l1:7')
-x = sp.symbols('x1:7')
-
-def symbolic_transform_with_ref_frames(xyz, euler_angles, rotation_order='XYZ'):
- 
-    N = ReferenceFrame('N')  # World frame
-    B = N.orientnew('B', 'Body', euler_angles, rotation_order)
-    
-    R = N.dcm(B)
-    
-    T = eye(4)
-    T[:3, :3] = R.T  # Transpose to get rotation from B to N
-    T[:3, 3] = xyz
-    
-    return T
-
-#originToBase = symbolic_transform_with_ref_frames(x[0:3], x[3:6], rotation_order='XYZ')
-originToBase = symbolic_transform_with_ref_frames(x[0:3], [0,0,0], rotation_order='XYZ')
-for i in range(1, 7):
-    key = "Joint" + str(i)
-    symbolic_matrix = symbolic_matrices[key]
-    translation_vector = symbolic_matrix[:3, 3]
-    norm_symbolic = sp.sqrt(sum(component**2 for component in translation_vector))
-    LMat[0, i - 1] = norm_symbolic
-    symbolic_matrix[:3,3]=symbolic_matrix[:3,3]*l[i-1]
-    baseToWrist = baseToWrist * symbolic_matrix
-    wristToBase = symbolic_matrix.inv() * wristToBase
-    symbolic_matrices[key] = symbolic_matrix
-    #print(i)
-
-numIters = 8
-dQMat = np.zeros((numIters, 6))
-dLMat = np.zeros((numIters, 6))
-dXMat = np.zeros((numIters, 6))
-avgAccMat = np.ones((numIters,2))
-
-
-q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-
-originToWrist = originToBase*baseToWrist
-translation_vector = originToWrist[:3, 3]
-rotation_matrix = originToWrist[:3, :3]
-
-
-pitch = sp.asin(-rotation_matrix[2, 0])  # pitch = arcsin(-r31)
-roll = sp.atan2(rotation_matrix[2, 1], rotation_matrix[2, 2])  # roll = atan2(r32, r33)
-yaw = sp.atan2(rotation_matrix[1, 0], rotation_matrix[0, 0])  # yaw = atan2(r21, r11)
-euler_angles = sp.Matrix([roll, pitch, yaw])
-
-
-vars = list(q) + list(l) + list(x)
-jacobian_translation = translation_vector.jacobian(vars)
-jacobian_rotation = euler_angles.jacobian(vars)
-
-
-rotation_matrix_flat = rotation_matrix.reshape(9, 1)
-jacobian_rotation = rotation_matrix_flat.jacobian(vars)
-
-joint_lengths_nominal = LMat.flatten()
-joint_lengths_actual = joint_lengths_nominal + dL.flatten()
-
-
-for j in range(0, numIters):
-    l = sp.symbols('l1:7')
-    x = sp.symbols('x1:7')
-    q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-
-    noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
-    joint_positions = joint_positions_actual + noise - np.sum(dQMat,axis=0)
-    joint_lengths = joint_lengths_actual
-    XOffsets = XActual.flatten()
-    for i in range(0, joint_positions_actual.shape[0]):
-
-        M_num_actual = originToWrist.subs({
-        **{q[j]: joint_positions[i, j] for j in range(6)},
-        **{l[j]: joint_lengths[j] for j in range(6)},
-        **{x[j]: XOffsets[j] for j in range(6)}
+    def set_current_iteration(self, iteration_index):
+        """Set the current iteration index"""
+        if iteration_index >= 0 and iteration_index < self.numIters:
+            self.current_iter = iteration_index
+        else:
+            print(f"Warning: Invalid iteration index {iteration_index}. Using 0 instead.")
+            self.current_iter = 0
+        
+    def generate_measurement(self, measurement_index):
+        """Generate a single measurement pair (actual and commanded)"""
+        l = sp.symbols('l1:7')
+        x = sp.symbols('x1:7')
+        q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
+        
+        if measurement_index >= self.n:
+            print("Measurement index out of bounds")
+            return None, None
+        
+        i = measurement_index
+        j = self.current_iter
+        
+        # Generate actual pose
+        noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (1, 6))[0]
+        joint_position_actual = self.joint_positions_actual[i] + noise - np.sum(self.dQMat, axis=0)
+        joint_lengths = self.joint_lengths_actual
+        XOffsets = self.XActual.flatten()
+        
+        M_num_actual = self.originToWrist.subs({
+            **{q[k]: joint_position_actual[k] for k in range(6)},
+            **{l[k]: joint_lengths[k] for k in range(6)},
+            **{x[k]: XOffsets[k] for k in range(6)}
         })   
         '''M_num_inverse = wristToBase.subs({
         **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
@@ -153,151 +170,233 @@ for j in range(0, numIters):
         }) '''
         rot_matrix = M_num_actual[:3, :3]
         trans = np.array(M_num_actual[:3, 3]).flatten().T
-        #row = np.concatenate((trans, rot_matrix.flatten()))
-        row = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        poseArrayActual[i, :] = row
-
-    numJacobianTrans = np.ones((3*joint_positions_commanded.shape[0], len(vars)))
-    
-    rotCount = 9
-    numJacobianRot = np.ones((rotCount*joint_positions_commanded.shape[0], len(vars)))
-
-
-
-
-    noise = np.random.uniform(-noiseMagnitude, noiseMagnitude, (n, 6))
-    joint_positions = joint_positions_commanded + noise
-    #joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
-    joint_lengths = joint_lengths_nominal + np.sum(dLMat,axis=0)
-
-    for i in range(0, joint_positions_commanded.shape[0]):
-        XOffsets = XNominal + np.sum(dXMat,axis=0)
-        M_num_commanded = originToWrist.subs({
-            **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-            **{l[j]: joint_lengths[j] for j in range(6)},
-            **{x[j]: XOffsets[j] for j in range(6)},
+        pose_actual = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        
+        # Generate commanded pose
+        noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (1, 6))[0]
+        joint_position_commanded = self.joint_positions_commanded[i] + noise
+        joint_lengths_commanded = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+        XOffsets_commanded = self.XNominal + np.sum(self.dXMat, axis=0)
+        
+        M_num_commanded = self.originToWrist.subs({
+            **{q[k]: joint_position_commanded[k] for k in range(6)},
+            **{l[k]: joint_lengths_commanded[k] for k in range(6)},
+            **{x[k]: XOffsets_commanded[k] for k in range(6)}
         })   
+        
         rot_matrix = M_num_commanded[:3, :3]
         trans = np.array(M_num_commanded[:3, 3]).flatten().T
-        row = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        poseArrayCommanded[i, :] = row
-        partialsTrans = jacobian_translation.subs({
-            **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-            **{l[j]: joint_lengths[j] for j in range(6)},
-            **{x[j]: XOffsets[j] for j in range(6)},
-        })   
-        partialsRot = jacobian_rotation.subs({
-            **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-            **{l[j]: joint_lengths[j] for j in range(6)},
-            **{x[j]: XOffsets[j] for j in range(6)},
-        })  
-        #print(partials)
-        numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
-        numJacobianRot[rotCount*i:rotCount*i+rotCount,:] = np.array(partialsRot).astype(np.float64)
+        pose_commanded = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        
+        return pose_actual, pose_commanded
+        
+    def compute_jacobians(self, measurements_actual, measurements_commanded):
+        """Compute Jacobians for all measurements in current iteration"""
+        l = sp.symbols('l1:7')
+        x = sp.symbols('x1:7')
+        q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
+        vars = list(self.q) + list(self.l) + list(self.x)
+        
+        num_measurements = len(measurements_actual)
+        numJacobianTrans = np.ones((3*num_measurements, len(vars)))
+        rotCount = 9
+        numJacobianRot = np.ones((rotCount*num_measurements, len(vars)))
 
-    translationDifferences = (poseArrayActual-poseArrayCommanded)[:,:3]
-    rotationalDifferences = (poseArrayActual-poseArrayCommanded)[:,3:6]
+        noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (num_measurements, 6))
+        # Use only the relevant subset of commanded joint positions
+        joint_positions = self.joint_positions_commanded[:num_measurements] + noise
+        joint_lengths = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+        
+        for i in range(num_measurements):
+            XOffsets = self.XNominal + np.sum(self.dXMat, axis=0)
+            partialsTrans = self.jacobian_translation.subs({
+                **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
+                **{l[j]: joint_lengths[j] for j in range(6)},
+                **{x[j]: XOffsets[j] for j in range(6)},
+            })   
+            partialsRot = self.jacobian_rotation.subs({
+                **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
+                **{l[j]: joint_lengths[j] for j in range(6)},
+                **{x[j]: XOffsets[j] for j in range(6)},
+            })  
+            
+            numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
+            numJacobianRot[rotCount*i:rotCount*i+rotCount,:] = np.array(partialsRot).astype(np.float64)
+            
+        return numJacobianTrans, numJacobianRot
+        
+    def compute_differences(self, measurements_actual, measurements_commanded):
+        """Compute differences between actual and commanded poses"""
+        measurements_actual = np.array(measurements_actual)
+        measurements_commanded = np.array(measurements_commanded)
+        
+        translationDifferences = measurements_actual[:,:3] - measurements_commanded[:,:3]
+        
+        rotationalDifferences = []
+        for i in range(len(measurements_actual)):
+            # Extract Euler angles for the current pose
+            euler_actual = measurements_actual[i, 3:6]
+            euler_commanded = measurements_commanded[i, 3:6]
+
+            # Convert Euler angles to rotation matrices
+            R_actual = R.from_euler('xyz', euler_actual).as_matrix()
+            R_commanded = R.from_euler('xyz', euler_commanded).as_matrix()
+
+            # Compute the difference between the rotation matrices
+            R_diff = R_actual - R_commanded
+
+            # Flatten the difference matrix
+            R_diff_flat = R_diff.flatten()
+            rotationalDifferences.append(R_diff_flat)
+
+        # Convert rotationalDifferences to a NumPy array
+        rotationalDifferences = np.array(rotationalDifferences).reshape(-1, 9)
+        
+        return translationDifferences, rotationalDifferences
+        
+    def compute_error_metrics(self, translationDifferences, rotationalDifferences):
+        """Compute error metrics from the differences"""
+        accuracyError = np.linalg.norm(translationDifferences, axis=1)
+        rotationalError = np.linalg.norm(rotationalDifferences, axis=1)
+        avgRotationalError = np.mean(rotationalError)
+        avgAccuracyError = np.mean(accuracyError)
+        avgTransAndRotError = np.array([avgAccuracyError, avgRotationalError])
+        
+        return avgAccuracyError, avgRotationalError, avgTransAndRotError
+        
+    def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
+        """Compute calibration parameters using least squares"""
+        translation_weight = 1.0  # Weight for translational errors
+        rotation_weight = 0.0     # Weight for rotational errors
+        
+        # Scale translational and rotational differences
+        scaled_translation_differences = translation_weight * translationDifferences.flatten()
+        scaled_rotational_differences = rotation_weight * rotationalDifferences.ravel()
+
+        # Combine scaled errors into a single error vector
+        bMat = np.concatenate((scaled_translation_differences, scaled_rotational_differences))
+
+        # Combine Jacobians into a single Jacobian matrix
+        AMat = np.vstack((translation_weight * numJacobianTrans, rotation_weight * numJacobianRot))
+        
+        errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
+        
+        return errorEstimates
     
-    rotationalDifferences = []
-    for i in range(poseArrayActual.shape[0]):
-        # Extract Euler angles for the current pose
-        euler_actual = poseArrayActual[i, 3:6]
-        euler_commanded = poseArrayCommanded[i, 3:6]
-
-        # Convert Euler angles to rotation matrices
-        R_actual = R.from_euler('xyz', euler_actual).as_matrix()
-        R_commanded = R.from_euler('xyz', euler_commanded).as_matrix()
-
-        # Compute the difference between the rotation matrices
-        R_diff = R_actual - R_commanded
-
-        # Flatten the difference matrix
-        R_diff_flat = R_diff.flatten()
-        rotationalDifferences.append(R_diff_flat)
-
-    # Convert rotationalDifferences to a NumPy array
-    rotationalDifferences = np.array(rotationalDifferences).reshape(-1, 9)
+    def process_iteration_results(self, measurements_actual, measurements_commanded):
+        """Process all measurements for the current iteration"""
+        j = self.current_iter
+        
+        # Check if we have enough measurements
+        if len(measurements_actual) == 0 or len(measurements_commanded) == 0:
+            print("No measurements available for processing")
+            return None
+            
+        # Compute Jacobians
+        numJacobianTrans, numJacobianRot = self.compute_jacobians(measurements_actual, measurements_commanded)
+        
+        # Compute differences
+        translationDifferences, rotationalDifferences = self.compute_differences(measurements_actual, measurements_commanded)
+        
+        # Compute error metrics
+        avgAccuracyError, avgRotationalError, avgTransAndRotError = self.compute_error_metrics(
+            translationDifferences, rotationalDifferences)
+        self.avgAccMat[j,:] = avgTransAndRotError
+        
+        # Compute calibration parameters
+        errorEstimates = self.compute_calibration_parameters(
+            translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot)
+            
+        # Extract parameter updates
+        dQEst = errorEstimates[0:6]
+        self.dQMat[j, :] = dQEst
+        
+        dLEst = errorEstimates[6:12]
+        self.dLMat[j, :] = dLEst
+        
+        dXEst = errorEstimates[12:18]
+        self.dXMat[j, :] = dXEst
+        
+        print("Iteration: ", j)
+        print("Avg Pose Error: ", avgTransAndRotError)
+        print("dLEst: ", np.sum(self.dLMat,axis=0))
+        #print("dQAct: ", self.dQ)
+        print("dQEst: ", np.sum(self.dQMat,axis=0))
+        print("dXEst: ", np.sum(self.dXMat,axis=0))
+        print("")
+        
+        return avgTransAndRotError, np.sum(self.dLMat,axis=0), self.dQ, np.sum(self.dQMat,axis=0), np.sum(self.dXMat,axis=0)
     
+    def save_to_csv(self, filename='calibrationData.csv'):
+        """Save calibration data to CSV file"""
+        arrays = [self.dQ, self.dL, self.dX, np.array([self.noiseMagnitude]), np.array([self.n]), 
+                 self.avgAccMat, self.dQMat, self.dLMat, self.dXMat]
+        max_len = max(arr.shape[0] for arr in arrays)
+
+        padded = []
+        for arr in arrays:
+            arr = np.atleast_2d(arr).astype(float)  # Ensure float dtype for NaN padding
+            # If arr is shape (1, N), transpose to (N, 1) for 1D arrays
+            if arr.shape[0] == 1 and arr.shape[1] != 1 and arr.shape[1] < max_len:
+                arr = arr.T
+            pad_width = ((0, max_len - arr.shape[0]), (0, 0))
+            arr_padded = np.pad(arr, pad_width, constant_values=np.nan)
+            padded.append(arr_padded)
+
+        combined = np.hstack(padded)
+
+        columns = []
+        prefixes = ['dQ', 'dL', 'dX', 'noiseMagnitude', 'n', 'avgAccMat', 'dQMat', 'dLMat', 'dXMat']
+
+        for arr, prefix in zip(arrays, prefixes):
+            arr = np.atleast_2d(arr)
+            n_cols = arr.shape[1]
+            # For scalars or 1D arrays, just use the prefix
+            if n_cols == 1:
+                columns.append(prefix)
+            else:
+                columns.extend([f"{prefix}{i+1}" for i in range(n_cols)])
+
+        df = pd.DataFrame(combined, columns=columns)
+        df.to_csv(filename, index=False)
+        print(f"Data saved to {filename}")
+
+
+def main(args=None):
+    # Create simulator
+    simulator = CalibrationConvergenceSimulator()
     
-    accuracyError= np.linalg.norm(translationDifferences, axis=1)
-    rotationalError= np.linalg.norm(rotationalDifferences, axis=1)
-    avgRotationalError = np.mean(rotationalError)
-    avgAccuracyError = np.mean(accuracyError)
-    avgTransAndRotError = (np.array([avgAccuracyError, avgRotationalError]))
-    avgAccMat[j,:] = avgTransAndRotError
+    # Process each iteration separately
+    for j in range(simulator.numIters):
+        print(f"\n--- Starting Iteration {j} ---")
+        simulator.set_current_iteration(j)
+        
+        # Pre-allocate numpy arrays for measurements
+        measurements_actual = np.zeros((simulator.n, simulator.m))
+        measurements_commanded = np.zeros((simulator.n, simulator.m))
+        valid_measurements = 0
+
+        # Generate individual measurements
+        for i in range(simulator.n):
+            actual, commanded = simulator.generate_measurement(i)
+            if actual is not None and commanded is not None:
+                measurements_actual[valid_measurements] = actual
+                measurements_commanded[valid_measurements] = commanded
+                valid_measurements += 1
+                print(f"Measurement {i}: Generated")
+
+        # Trim arrays to only include valid measurements
+        if valid_measurements < simulator.n:
+            measurements_actual = measurements_actual[:valid_measurements]
+            measurements_commanded = measurements_commanded[:valid_measurements]
+        
+        # Process all measurements for this iteration
+        results = simulator.process_iteration_results(measurements_actual, measurements_commanded)
     
+    # Save results to CSV
+    #simulator.save_to_csv()
     
+    print('done')
 
-    '''#For only measuring translation differences
-    bMat = translationDifferences.flatten()
-    AMat = numJacobianTrans
-    
-    #For measuring only rotational differences
-    bMat = rotationalDifferences.ravel()
-    AMat = numJacobianRot'''
-    
-    translation_weight = 1.0  # Weight for translational errors
-    rotation_weight = 10.0     # Weight for rotational errors
-    
-    # Scale translational and rotational differences
-    scaled_translation_differences = translation_weight * translationDifferences.flatten()
-    scaled_rotational_differences = rotation_weight * rotationalDifferences.ravel()
-
-    # Combine scaled errors into a single error vector
-    bMat = np.concatenate((scaled_translation_differences, scaled_rotational_differences))
-
-    # Combine Jacobians into a single Jacobian matrix
-    AMat = np.vstack((translation_weight * numJacobianTrans, rotation_weight * numJacobianRot))
-    
-    errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
-
-    dQEst = errorEstimates[0:6]
-    dQMat[j, :] = dQEst
-    dLEst = errorEstimates[6:12]
-    dLMat[j, :] = dLEst
-    dXEst = errorEstimates[12:18]
-    dXMat[j, :] = dXEst
-    print("Iteration: ", j)
-    print("Avg Pose Error: ", avgTransAndRotError)
-    print("dLEst: ", np.sum(dLMat,axis=0))
-    print("dQAct: ", dQ)
-    print("dQEst: ", np.sum(dQMat,axis=0))
-    print("dXEst: ", np.sum(dXMat,axis=0))
-    print("")
-
-
-
-
-arrays = [dQ, dL, dX, np.array([noiseMagnitude]), np.array([n]), avgAccMat, dQMat, dLMat, dXMat]
-max_len = max(arr.shape[0] for arr in arrays)
-
-padded = []
-for arr in arrays:
-    arr = np.atleast_2d(arr).astype(float)  # Ensure float dtype for NaN padding
-    # If arr is shape (1, N), transpose to (N, 1) for 1D arrays
-    if arr.shape[0] == 1 and arr.shape[1] != 1 and arr.shape[1] < max_len:
-        arr = arr.T
-    pad_width = ((0, max_len - arr.shape[0]), (0, 0))
-    arr_padded = np.pad(arr, pad_width, constant_values=np.nan)
-    padded.append(arr_padded)
-
-combined = np.hstack(padded)
-
-columns = []
-prefixes = ['dQ', 'dL', 'dX', 'noiseMagnitude', 'n', 'avgAccMat', 'dQMat', 'dLMat', 'dXMat']
-
-for arr, prefix in zip(arrays, prefixes):
-    arr = np.atleast_2d(arr)
-    n_cols = arr.shape[1]
-    # For scalars or 1D arrays, just use the prefix
-    if n_cols == 1:
-        columns.append(prefix)
-    else:
-        columns.extend([f"{prefix}{i+1}" for i in range(n_cols)])
-
-df = pd.DataFrame(combined, columns=columns)
-df.to_csv('calibrationData.csv', index=False)
-
-
-
-print('done')
+if __name__ == "__main__":
+    main()

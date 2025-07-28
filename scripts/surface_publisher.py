@@ -114,6 +114,16 @@ class SurfacePublisher(Node):
             id: int - Unique marker ID
             color: np.array([r, g, b]) - RGB color (0-1 range)
         """
+
+        '''marker_publisher.publish_arrow(
+            position=np.array([endEffectorPosWeirdFrame[0], endEffectorPosWeirdFrame[1], endEffectorPosWeirdFrame[2]]),  # Position of arrow's base
+            #orientation=np.array([endEffectorOrientWeirdFrame[0], endEffectorOrientWeirdFrame[1], endEffectorOrientWeirdFrame[2]]),     # Default orientation (points along x-axis)
+            orientation = np.array([-(pitch+np.pi/2),-roll,+yaw+np.pi/2]),  # Adjust orientation to point towards target
+            length=np.linalg.norm(vectorToTarget),  
+            thickness=0.01,                 # 30cm long arrow
+            id=10,                              # Unique ID for this arrow
+            color=np.array([1.0, 0.0, 0.0])     # Red color
+        )'''
         marker = Marker()
         marker.header.frame_id = "base_link"
         marker.header.stamp = self.get_clock().now().to_msg()

@@ -135,7 +135,7 @@ class AR4_ROBOT(Node):
         else:
             position = np.array([position[0], position[1], position[2], 1.0]) + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"],0.0])        
             
-        transformed_position = np.dot(self.inverse_transformation_matrix, position)[:3]
+        transformed_position = (np.dot(self.inverse_transformation_matrix, position)[:3])
         
         roll = eulerAngles[1] - self.angle_offsets["pitch"]
         pitch = eulerAngles[0] - self.angle_offsets["roll"]
