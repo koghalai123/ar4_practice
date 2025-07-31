@@ -28,7 +28,7 @@ class CalibrationConvergenceSimulator:
                 
         self.resetMatrices()
         
-        self.dQMagnitude = 0.1
+        self.dQMagnitude = 0.0
         self.dQ = np.random.uniform(-self.dQMagnitude, self.dQMagnitude, (1, 6))[0]
         
         
@@ -37,7 +37,7 @@ class CalibrationConvergenceSimulator:
         self.dL = np.random.uniform(-self.dLMagnitude, self.dLMagnitude, (1, 6))[0]
         
         self.XNominal = np.zeros((6))
-        self.dXMagnitude = 0.1
+        self.dXMagnitude = 0.0
         self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))[0]
         self.XActual = self.XNominal + self.dX
         
@@ -127,10 +127,10 @@ class CalibrationConvergenceSimulator:
         self.translation_vector = self.originToWrist[:3, 3]
         self.rotation_matrix = self.originToWrist[:3, :3]
         
-        self.pitch = sp.asin(-self.rotation_matrix[2, 0])
+        '''self.pitch = sp.asin(-self.rotation_matrix[2, 0])
         self.roll = sp.atan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
         self.yaw = sp.atan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
-        self.euler_angles = sp.Matrix([self.roll, self.pitch, self.yaw])
+        self.euler_angles = sp.Matrix([self.roll, self.pitch, self.yaw])'''
         
         vars = list(self.q) + list(self.l) + list(self.x)
         self.jacobian_translation = self.translation_vector.jacobian(vars)
@@ -148,25 +148,14 @@ class CalibrationConvergenceSimulator:
         else:
             print(f"Warning: Invalid iteration index {iteration_index}. Using 0 instead.")
             self.current_iter = 0
-        
-    def generate_measurement(self, joint_positions_commanded = None, calibrate=False):
-        """Generate a single measurement pair (actual and commanded)"""
+    
+    def get_fk_calibration_model(self, joint_positions, joint_lengths, XOffsets):
         l = sp.symbols('l1:7')
         x = sp.symbols('x1:7')
         q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
         
-
-        # Generate actual pose
-        #noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (1, 6))[0]
-        if joint_positions_commanded is None:
-            joint_positions_commanded = np.random.uniform(-3, 3, (1, 6))[0]
-        joint_positions_actual = joint_positions_commanded + self.dQ
-        
-        joint_lengths = self.joint_lengths_actual
-        XOffsets = self.XActual.flatten()
-        
         M_num_actual = self.originToWrist.subs({
-            **{q[k]: joint_positions_actual[k] for k in range(6)},
+            **{q[k]: joint_positions[k] for k in range(6)},
             **{l[k]: joint_lengths[k] for k in range(6)},
             **{x[k]: XOffsets[k] for k in range(6)}
         })   
@@ -176,49 +165,69 @@ class CalibrationConvergenceSimulator:
         }) '''
         rot_matrix = M_num_actual[:3, :3]
         trans = np.array(M_num_actual[:3, 3]).flatten().T
-        pose_actual = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        return pose
+    
+    def generate_measurement_pose(self, pose = None, calibrate=False, frame = "end_effector_link"):
+        from ar4_robot import AR4_ROBOT
         
-        # Generate commanded pose
+        use_joint_positions = 0
+        robot = AR4_ROBOT(use_joint_positions)
+        
+        if pose is None:
+            pose = np.random.uniform(-0.03, 0.03, (1, 6))[0]
+        position = pose[:3]
+        orientation =  pose[3:6]
+        transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
+        
+        #pos,ori = robot.get_current_pose()
+        joint_positions_commanded = robot.get_ik(position, orientation, frame)
+        
+        joint_lengths = self.joint_lengths_nominal
+        XOffsets = self.XNominal
+        
+        #
+        pose_fk = self.get_fk_calibration_model(np.array([0,0,0,0,0,0]), joint_lengths, XOffsets)
+        global_position, global_orientation = robot.toMyPreferredFrame(pose_fk[:3], pose_fk[3:6], reference_frame="base_link")
+        #fk_result = robot.moveit2.compute_fk(
+        #    joint_state=np.array([0,0,0,0,0,0]).tolist(),  # Convert NumPy array to list
+        #)
+        pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded, calibrate)
+    
+    def generate_measurement_joints(self, joint_positions_commanded = None, calibrate=False):
+        """Generate a single measurement pair (actual and commanded)"""
+                
+
+        # Generate actual pose
         #noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (1, 6))[0]
-        joint_positions_commanded = joint_positions_commanded# + noise
-        joint_lengths_commanded = self.joint_lengths_nominal# + np.sum(self.dLMat, axis=0)
-        XOffsets_commanded = self.XNominal #+ np.sum(self.dXMat, axis=0)
+        if joint_positions_commanded is None:
+            joint_positions_commanded = np.random.uniform(-3, 3, (1, 6))[0]
+            
+        joint_lengths_commanded = self.joint_lengths_nominal
+        XOffsets_commanded = self.XNominal
+        pose_commanded = self.get_fk_calibration_model(joint_positions_commanded, joint_lengths_commanded, XOffsets_commanded)
         
-        M_num_commanded = self.originToWrist.subs({
-            **{q[k]: joint_positions_commanded[k] for k in range(6)},
-            **{l[k]: joint_lengths_commanded[k] for k in range(6)},
-            **{x[k]: XOffsets_commanded[k] for k in range(6)}
-        })   
         
-        rot_matrix = M_num_commanded[:3, :3]
-        trans = np.array(M_num_commanded[:3, 3]).flatten().T
-        pose_commanded = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        if calibrate:
+            joint_positions_commanded = joint_positions_commanded - np.sum(self.dQMat, axis=0)
+        joint_lengths = self.joint_lengths_actual
+        XOffsets = self.XActual.flatten()
+        joint_positions_actual = joint_positions_commanded + self.dQ
+        pose_actual = self.get_fk_calibration_model(joint_positions_actual, joint_lengths, XOffsets)
+                
+        if calibrate:
+            pose_commanded = pose_commanded + np.sum(self.dXMat, axis=0)
 
 
         self.poseArrayActual[self.current_sample][:] = pose_actual
-        self.joint_positions_actual[self.current_sample][:] = joint_positions_actual
-        
-        #it is subtracted by 1 before the function call when cvalibrating, so it has to be added here again
-        
-        if not calibrate:
-            self.poseArrayCommanded[self.current_sample][:] = pose_commanded
-            self.joint_positions_commanded[self.current_sample][:] = joint_positions_commanded
-            
-
+        self.joint_positions_actual[self.current_sample][:] = joint_positions_actual        
+        self.poseArrayCommanded[self.current_sample][:] = pose_commanded
+        self.joint_positions_commanded[self.current_sample][:] = joint_positions_commanded
         self.current_sample += 1     
                     
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
     
-    def apply_calibration_parameters(self, joint_positions_commanded, ):
-        calibrated_joint_positions_commanded = joint_positions_commanded - np.sum(self.dQMat, axis=0)
-        calibrate=True
-        self.current_sample -= 1
-        self.poseArrayCommanded[self.current_sample][:] = self.poseArrayCommanded[self.current_sample][:] + np.sum(self.dXMat, axis=0)
-
-        calibrated_pose_actual, calibrated_pose_commanded, calibrated_joint_positions_actual, calibrated_joint_positions_commanded = self.generate_measurement(calibrated_joint_positions_commanded, calibrate)
-        
-        return calibrated_pose_actual, calibrated_joint_positions_actual, calibrated_joint_positions_commanded
-        
+            
         
     def compute_jacobians(self, joint_angles):
         """Compute Jacobians for all measurements in current iteration"""
@@ -431,8 +440,11 @@ def main(args=None):
 
         # Generate individual measurements
         for i in range(simulator.n):
-            poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement()
-            calibrated_pose_actual, calibrated_joint_positions_actual, calibrated_joint_positions_commanded = simulator.apply_calibration_parameters(joint_positions_commanded)
+            poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_joints(calibrate=True)
+            #calibrated_pose_actual, calibrated_joint_positions_actual, calibrated_joint_positions_commanded = simulator.apply_calibration_joints(joint_positions_commanded)
+            simulator.generate_measurement_pose()
+            
+            
             numJacobianTrans, numJacobianRot = simulator.compute_jacobians(joint_positions_commanded)
             
             print(f"Measurement {i}: Generated")

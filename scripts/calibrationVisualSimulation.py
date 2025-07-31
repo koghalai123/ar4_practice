@@ -5,7 +5,7 @@ from rclpy.node import Node
 
 import argparse
 from tf_transformations import quaternion_from_euler
-from geometry_msgs.msg import Quaternion, Point
+from geometry_msgs.msg import Quaternion, Point, Pose
 from surface_publisher import SurfacePublisher
 from ar4_robot import AR4_ROBOT
 from calibrationConvergenceSimulation import CalibrationConvergenceSimulator
@@ -81,15 +81,29 @@ def main(args=None):
 
     simulator = CalibrationConvergenceSimulator()
     
+    '''target_pose = Pose()
+    target_pose.position.x = 0.0
+    target_pose.position.y = 0.3
+    target_pose.position.z = 0.3
+    target_pose.orientation.x = 0.0
+    target_pose.orientation.y = 0.0
+    target_pose.orientation.z = 0.0
+    target_pose.orientation.w = 1.0
+
+    # Compute inverse kinematics
+    joint_state = robot.moveit2.compute_ik(
+        position=target_pose.position,
+        quat_xyzw=target_pose.orientation,
+    )'''
+    
+    #pos,ori = robot.get_current_pose()
+    #joint_goals = robot.get_ik(pos,ori)
+    
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
         simulator.set_current_iteration(j)
-        
-        # Pre-allocate numpy arrays for measurements
-        measurements_actual = np.zeros((simulator.n, simulator.m))
-        measurements_commanded = np.zeros((simulator.n, simulator.m))
-        valid_measurements = 0
+
 
         # Generate individual measurements
         for i in range(simulator.n):

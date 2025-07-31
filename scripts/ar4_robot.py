@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import numpy as np
+import rclpy
 from rclpy.node import Node
 from pymoveit2 import MoveIt2
-from geometry_msgs.msg import Point, Quaternion
+from geometry_msgs.msg import Point, Quaternion, Pose
 from tf_transformations import quaternion_from_euler, euler_from_quaternion, euler_matrix, euler_from_matrix
 import time
 
@@ -16,6 +17,7 @@ def create_transformation_matrix(translation, euler_angles):
 
 class AR4_ROBOT(Node):
     def __init__(self, use_joint_positions):
+        rclpy.init()
         super().__init__("ar4_robot_commander")
         
         self.moveit2 = MoveIt2(
@@ -26,8 +28,8 @@ class AR4_ROBOT(Node):
             group_name="ar_manipulator",
         )
         
-        self.moveit2.max_velocity = 0.75
-        self.moveit2.max_acceleration = 0.5
+        self.moveit2.max_velocity = 1.5
+        self.moveit2.max_acceleration = 3
         
         self.use_joint_positions = use_joint_positions
         
@@ -84,17 +86,53 @@ class AR4_ROBOT(Node):
             np.dot(self.transformation_matrix[:3, :3], euler_matrix(eulerAngles[0], eulerAngles[1], eulerAngles[2], axes='sxyz')[:3, :3]),
             axes='sxyz'
         )
-        global_orientation = [
+        global_orientation = np.array([
             transformed_orientation[1] + self.angle_offsets["roll"],
             transformed_orientation[0] + self.angle_offsets["pitch"],
             transformed_orientation[2] + self.angle_offsets["yaw"]
-        ]
+        ])
         
         homeRefFramePos = global_position- np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
         if reference_frame=="base_link":
             return global_position, global_orientation
         else:
             return homeRefFramePos, global_orientation
+    
+    def get_ik(self, position, eulerAngles, frame="base_link"):
+        
+        
+        transformed_position, transformed_orientation = self.fromMyPreferredFrame(position, eulerAngles, old_reference_frame=frame, new_reference_frame="base_link")
+        
+        quat = quaternion_from_euler(transformed_orientation[0], transformed_orientation[1], transformed_orientation[2])
+        
+        target_pose = Pose()
+        target_pose.position.x = transformed_position[0]
+        target_pose.position.y = transformed_position[1]
+        target_pose.position.z = transformed_position[2]
+        
+        
+        
+        target_pose.orientation.x = quat[0]
+        target_pose.orientation.y = quat[1]
+        target_pose.orientation.z = quat[2]
+        target_pose.orientation.w = quat[3]
+
+        # Compute inverse kinematics
+        jointPositions = self.moveit2.compute_ik(
+            position=target_pose.position,
+            quat_xyzw=target_pose.orientation,
+        )
+
+        # Check if IK was successful
+        if jointPositions is not None:
+            print("Joint angles found")
+            #for name, position in zip(jointPositions.name, jointPositions.position):
+            #    print(f"{name}: {position}")
+            return np.array(jointPositions.position[:6])
+        else:
+            print("Failed to compute IK.")
+            return None
+        
     
     def get_current_pose(self, reference_frame="base_link"):
         """Get the current end effector pose."""
@@ -129,12 +167,14 @@ class AR4_ROBOT(Node):
         self.homeRefFramePos = homeRefFramePos
         self.homeRefFrameOrientation = global_orientation'''
         
-    def fromMyPreferredFrame(self, position, eulerAngles, reference_frame="base_link"):
-        if reference_frame == "base_link":
+    def fromMyPreferredFrame(self, position, eulerAngles, old_reference_frame="base_link", new_reference_frame="base_link"):
+        if new_reference_frame == old_reference_frame:
             position = np.array([position[0], position[1], position[2], 1.0])
-        else:
+        elif new_reference_frame == "end_effector_link" and old_reference_frame == "base_link":
+            position = np.array([position[0], position[1], position[2], 1.0]) - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"],0.0])        
+        elif new_reference_frame == "base_link" and old_reference_frame == "end_effector_link":
             position = np.array([position[0], position[1], position[2], 1.0]) + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"],0.0])        
-            
+
         transformed_position = (np.dot(self.inverse_transformation_matrix, position)[:3])
         
         roll = eulerAngles[1] - self.angle_offsets["pitch"]
