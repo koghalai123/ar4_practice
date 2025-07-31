@@ -28,7 +28,7 @@ class CalibrationConvergenceSimulator:
                 
         self.resetMatrices()
         
-        self.dQMagnitude = 0.0
+        self.dQMagnitude = 0.1
         self.dQ = np.random.uniform(-self.dQMagnitude, self.dQMagnitude, (1, 6))[0]
         
         
@@ -37,7 +37,7 @@ class CalibrationConvergenceSimulator:
         self.dL = np.random.uniform(-self.dLMagnitude, self.dLMagnitude, (1, 6))[0]
         
         self.XNominal = np.zeros((6))
-        self.dXMagnitude = 0.0
+        self.dXMagnitude = 0.1
         self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))[0]
         self.XActual = self.XNominal + self.dX
         
@@ -71,7 +71,7 @@ class CalibrationConvergenceSimulator:
         self.numJacobianRot = np.zeros((0, 18))
         
     def loadSymbolicTransforms(self):
-        symbolic_matrices = {}
+        '''symbolic_matrices = {}
         
         fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
         for fileName in fileNameList:
@@ -84,8 +84,22 @@ class CalibrationConvergenceSimulator:
             symbolic_matrix = sp.Matrix([[sp.sympify(cell) for cell in row] for row in data])
             # Store in dictionary with key based on file name (without .csv)
             key = fileName.replace(".csv", "")
+            symbolic_matrices[key] = symbolic_matrix'''
+        symbolic_matrices = {}
+        fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
+        for fileName in fileNameList:
+            with open(fileName, "r") as f:
+                reader = csv.reader(f)
+                header = next(reader)  # Skip header if present
+                data = [row for row in reader]
+
+            # Convert to SymPy Matrix
+            symbolic_matrix = sp.Matrix([[sp.sympify(cell) for cell in row] for row in data])
+            # Store in dictionary with key based on file name (without .csv)
+            key = fileName.replace(".csv", "")
             symbolic_matrices[key] = symbolic_matrix
         return symbolic_matrices
+    
         
     def get_homogeneous_transform(self, xyz, euler_angles, rotation_order='XYZ'):
         rotation = R.from_euler(rotation_order, euler_angles)
@@ -112,8 +126,12 @@ class CalibrationConvergenceSimulator:
         self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [0,0,0], rotation_order='XYZ')
         self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], self.XActual[3:6], rotation_order='XYZ')
         
+        '''for i in range(1, 7):
+            key = "Joint" + str(i)'''
+            
         for i in range(1, 7):
             key = "Joint" + str(i)
+            symbolic_matrix = self.symbolic_matrices[key]
             symbolic_matrix = self.symbolic_matrices[key]
             translation_vector = symbolic_matrix[:3, 3]
             norm_symbolic = sp.sqrt(sum(component**2 for component in translation_vector))
@@ -122,7 +140,8 @@ class CalibrationConvergenceSimulator:
             self.baseToWrist = self.baseToWrist * symbolic_matrix
             self.wristToBase = symbolic_matrix.inv() * self.wristToBase
             self.symbolic_matrices[key] = symbolic_matrix
-            
+        #baseToWrist = sp.eye(4)
+        
         self.originToWrist = self.originToBase*self.baseToWrist
         self.translation_vector = self.originToWrist[:3, 3]
         self.rotation_matrix = self.originToWrist[:3, :3]
@@ -138,7 +157,7 @@ class CalibrationConvergenceSimulator:
         self.rotation_matrix_flat = self.rotation_matrix.reshape(9, 1)
         self.jacobian_rotation = self.rotation_matrix_flat.jacobian(vars)
         
-        self.joint_lengths_nominal = self.LMat.flatten()
+        self.joint_lengths_nominal = np.ones(6)
         self.joint_lengths_actual = self.joint_lengths_nominal + self.dL.flatten()
     
     def set_current_iteration(self, iteration_index):
@@ -154,7 +173,7 @@ class CalibrationConvergenceSimulator:
         x = sp.symbols('x1:7')
         q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
         
-        M_num_actual = self.originToWrist.subs({
+        M_num_actual = self.baseToWrist.subs({
             **{q[k]: joint_positions[k] for k in range(6)},
             **{l[k]: joint_lengths[k] for k in range(6)},
             **{x[k]: XOffsets[k] for k in range(6)}
@@ -166,34 +185,34 @@ class CalibrationConvergenceSimulator:
         rot_matrix = M_num_actual[:3, :3]
         trans = np.array(M_num_actual[:3, 3]).flatten().T
         pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
+        
+        
         return pose
     
-    def generate_measurement_pose(self, pose = None, calibrate=False, frame = "end_effector_link"):
-        from ar4_robot import AR4_ROBOT
+    def generate_measurement_pose(self, robot, pose = None, calibrate=False, frame = "end_effector_link"):
         
-        use_joint_positions = 0
-        robot = AR4_ROBOT(use_joint_positions)
         
         if pose is None:
             pose = np.random.uniform(-0.03, 0.03, (1, 6))[0]
         position = pose[:3]
         orientation =  pose[3:6]
-        transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
+        #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
         
         #pos,ori = robot.get_current_pose()
         joint_positions_commanded = robot.get_ik(position, orientation, frame)
         
-        joint_lengths = self.joint_lengths_nominal
-        XOffsets = self.XNominal
+        #joint_lengths = self.joint_lengths_nominal
+        #XOffsets = self.XNominal
         
         #
-        pose_fk = self.get_fk_calibration_model(np.array([0,0,0,0,0,0]), joint_lengths, XOffsets)
-        global_position, global_orientation = robot.toMyPreferredFrame(pose_fk[:3], pose_fk[3:6], reference_frame="base_link")
+        #pose_fk = self.get_fk_calibration_model(np.array([0,0,0,0,0,0]), joint_lengths, XOffsets)
+        #global_position, global_orientation = robot.toMyPreferredFrame(pose_fk[:3], pose_fk[3:6], reference_frame="base_link")
         #fk_result = robot.moveit2.compute_fk(
         #    joint_state=np.array([0,0,0,0,0,0]).tolist(),  # Convert NumPy array to list
         #)
         pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded, calibrate)
-    
+        return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
+        
     def generate_measurement_joints(self, joint_positions_commanded = None, calibrate=False):
         """Generate a single measurement pair (actual and commanded)"""
                 
@@ -206,6 +225,8 @@ class CalibrationConvergenceSimulator:
         joint_lengths_commanded = self.joint_lengths_nominal
         XOffsets_commanded = self.XNominal
         pose_commanded = self.get_fk_calibration_model(joint_positions_commanded, joint_lengths_commanded, XOffsets_commanded)
+        
+        self.joint_positions_commanded[self.current_sample][:] = joint_positions_commanded
         
         
         if calibrate:
@@ -222,7 +243,7 @@ class CalibrationConvergenceSimulator:
         self.poseArrayActual[self.current_sample][:] = pose_actual
         self.joint_positions_actual[self.current_sample][:] = joint_positions_actual        
         self.poseArrayCommanded[self.current_sample][:] = pose_commanded
-        self.joint_positions_commanded[self.current_sample][:] = joint_positions_commanded
+        
         self.current_sample += 1     
                     
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
@@ -428,7 +449,9 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10)
-    
+    from ar4_robot import AR4_ROBOT
+    use_joint_positions = 0
+    robot = AR4_ROBOT(use_joint_positions)
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
@@ -440,12 +463,11 @@ def main(args=None):
 
         # Generate individual measurements
         for i in range(simulator.n):
-            poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_joints(calibrate=True)
-            #calibrated_pose_actual, calibrated_joint_positions_actual, calibrated_joint_positions_commanded = simulator.apply_calibration_joints(joint_positions_commanded)
-            simulator.generate_measurement_pose()
+            #poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_joints(calibrate=True)
+            simulator.generate_measurement_pose(robot = robot, pose = None, calibrate=True, frame = "end_effector_link")
             
             
-            numJacobianTrans, numJacobianRot = simulator.compute_jacobians(joint_positions_commanded)
+            numJacobianTrans, numJacobianRot = simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample-1])
             
             print(f"Measurement {i}: Generated")
 

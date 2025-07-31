@@ -25,9 +25,11 @@ moveit2 = MoveIt2(
             group_name="ar_manipulator",
             callback_group=ReentrantCallbackGroup()
         )
+moveit2.reset_new_joint_state_checker()
+moveit2.force_reset_executing_state()
 
 poseArray = np.array([])
-n = 1000
+n = 100
 random_array = np.random.uniform(-3, 3, (n, 6))
 for joint_positions in random_array:
     fk_result = moveit2.compute_fk(joint_positions)
@@ -79,11 +81,13 @@ array = np.loadtxt("verifyFKPoints.csv", delimiter=",", skiprows=1)
 moveitPoses = array[:, :7]
 joint_positions = array[:, 7:]
 poseArray = np.array([])
-q1, q2, q3, q4, q5, q6 = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-
+q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
 for i in range(0, moveitPoses.shape[0]):
     moveitFKResult = moveitPoses[i, :7]
-    M_num = baseToWrist.subs({q1: joint_positions[i,0],q2: joint_positions[i,1],q3: joint_positions[i,2],q4: joint_positions[i,3],q5: joint_positions[i,4],q6: joint_positions[i,5],})
+    #M_num = baseToWrist.subs({q1: joint_positions[i,0],q2: joint_positions[i,1],q3: joint_positions[i,2],q4: joint_positions[i,3],q5: joint_positions[i,4],q6: joint_positions[i,5],})
+    M_num = baseToWrist.subs({
+        **{q[k]: joint_positions[i,k] for k in range(6)}
+    })  
     #print(M_num)
 
     rot_matrix = M_num[:3, :3]
@@ -99,7 +103,7 @@ for i in range(0, moveitPoses.shape[0]):
     myFKResult = row
     #print(moveitFKResult-myFKResult)
 
-meanDifference = np.mean(np.sum(np.abs(poseArray-moveitPoses),axis=1))
+meanDifference = np.mean(np.sum(np.abs(poseArray-moveitPoses),axis=1))/i
 
 print('done')
 
