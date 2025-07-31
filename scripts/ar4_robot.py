@@ -186,17 +186,39 @@ class AR4_ROBOT(Node):
 
         return transformed_position, transformed_orientation
 
-    def move_to_pose(self, position, eulerAngles, reference_frame="base_link"):
+    def move_to_pose(self, inputPosition, eulerAngles, reference_frame="base_link"):
         """Move to a specific pose."""
 
-        transformed_position, transformed_orientation = self.fromMyPreferredFrame(position, eulerAngles, reference_frame)
+        # Transform the input position and orientation
+        transformed_position, transformed_orientation = self.fromMyPreferredFrame(
+            inputPosition, eulerAngles, old_reference_frame=reference_frame, new_reference_frame="base_link"
+        )
 
         # Convert transformed orientation to quaternion
-        quat = quaternion_from_euler(transformed_orientation[0], transformed_orientation[1], transformed_orientation[2])
-        orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+        quat = quaternion_from_euler(
+            transformed_orientation[0], transformed_orientation[1], transformed_orientation[2]
+        )
+        '''orientation = Quaternion(
+            x=(quat[0]),  # Convert numpy.float64 to float
+            y=(quat[1]),  # Convert numpy.float64 to float
+            z=(quat[2]),  # Convert numpy.float64 to float
+            w=(quat[3])   # Convert numpy.float64 to float
+        )
 
-        #self.moveit2.force_reset_executing_state()
-        self.moveit2.move_to_pose(position=Point(x=transformed_position[0], y=transformed_position[1], z=transformed_position[2]), quat_xyzw=orientation)
+        # Convert transformed position to Point
+        position = Point(
+            x=(transformed_position[0]),  # Convert numpy.float64 to float
+            y=(transformed_position[1]),  # Convert numpy.float64 to float
+            z=(transformed_position[2])   # Convert numpy.float64 to float
+        )'''
+
+        position = Point(x=float(transformed_position[0]), y=float(transformed_position[1]), z=float(transformed_position[2]))
+        orientation = Quaternion(x=float(quat[0]), y=float(quat[1]), z=float(quat[2]), w=float(quat[3]))    
+        
+        #position_tuple = (float(transformed_position[0]), float(transformed_position[1]), float(transformed_position[2]))
+        #quat_tuple = (float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
+        # Move to the pose
+        self.moveit2.move_to_pose(position=position, quat_xyzw=orientation)
         self.moveit2.wait_until_executed()
 
     def move_to_joint_positions(self, joint_positions):

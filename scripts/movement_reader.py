@@ -67,9 +67,10 @@ class MoveItCommander(Node):
                     self.get_logger().error("Invalid command: Need exactly 6 values (position x,y,z and RPY)")
                     return False
                 
-                position = Point(x=values[0], y=values[1], z=values[2])
+                
                 roll, pitch, yaw = values[3], values[4], values[5]
                 quat = quaternion_from_euler(roll, pitch, yaw)
+                position = Point(x=values[0], y=values[1], z=values[2])
                 orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
                 
                 self.get_logger().info(f"Executing pose command: Position={values[0:3]}, RPY={values[3:6]}")

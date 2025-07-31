@@ -20,7 +20,7 @@ from scipy.spatial.transform import Rotation as R
 import pandas as pd
 
 class CalibrationConvergenceSimulator:
-    def __init__(self, n=10, numIters=10):
+    def __init__(self, n=10, numIters=10, dQMagnitude=0.1, dLMagnitude=0.0,dXMagnitude=0.1):
         self.n=n
         self.m = 6
         self.noiseMagnitude = 0.00
@@ -28,16 +28,16 @@ class CalibrationConvergenceSimulator:
                 
         self.resetMatrices()
         
-        self.dQMagnitude = 0.1
+        self.dQMagnitude = dQMagnitude
         self.dQ = np.random.uniform(-self.dQMagnitude, self.dQMagnitude, (1, 6))[0]
         
         
         self.LMat = np.ones((1, 6))
-        self.dLMagnitude = 0.0
+        self.dLMagnitude = dLMagnitude
         self.dL = np.random.uniform(-self.dLMagnitude, self.dLMagnitude, (1, 6))[0]
         
         self.XNominal = np.zeros((6))
-        self.dXMagnitude = 0.1
+        self.dXMagnitude = dXMagnitude
         self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))[0]
         self.XActual = self.XNominal + self.dX
         

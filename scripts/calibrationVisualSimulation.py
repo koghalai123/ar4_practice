@@ -72,14 +72,14 @@ def camera_vector_from_pose_and_measurement(roll, pitch, yaw, distance):
     return vector
 
 def main(args=None):
-    rclpy.init(args=args)
+    #rclpy.init(args=args)
     frame = "end_effector_link"
     use_joint_positions = 0
     robot = AR4_ROBOT(use_joint_positions)
     robot.resetErrors()
     marker_publisher = SurfacePublisher()
 
-    simulator = CalibrationConvergenceSimulator()
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=5, dQMagnitude=0.0, dLMagnitude=0.0,dXMagnitude=0.0)
     
     '''target_pose = Pose()
     target_pose.position.x = 0.0
@@ -111,22 +111,26 @@ def main(args=None):
             robot.moveit2.motion_suceeded = False
             while counter < 10:
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
-            
+                
+                
                 
                 targetPosBelieved = np.array([globalHomePos[0], globalHomePos[1], 0])
                 targetPosActual = targetPosBelieved + np.array([0.05,0.05,0.05])
                 globalEndEffectorPos = relativeToHomePos+globalHomePos
+                
+                
                 vectorToTarget = globalEndEffectorPos-targetPosActual
                 roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], vectorToTarget[1], vectorToTarget[2])
                 
                 distanceToTarget = np.linalg.norm(vectorToTarget)
-                calculatedVector = camera_vector_from_pose_and_measurement(roll, pitch, yaw, distanceToTarget)
-                measuredGlobalEndEffectorPos = targetPosBelieved + calculatedVector
+                #calculatedVector = camera_vector_from_pose_and_measurement(roll, pitch, yaw, distanceToTarget)
+                #measuredGlobalEndEffectorPos = targetPosBelieved + calculatedVector
+                #measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(measuredGlobalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
 
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.fromMyPreferredFrame(targetPosActual, np.array([0,0,0]), reference_frame="base_link")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(globalEndEffectorPos, np.array([roll,pitch,yaw]), reference_frame="base_link")
-                measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(measuredGlobalEndEffectorPos, np.array([roll,pitch,yaw]), reference_frame="base_link")
+                targetPosWeirdFrame, targetOrientWeirdFrame = robot.fromMyPreferredFrame(targetPosActual, np.array([0,0,0]), old_reference_frame="base_link", new_reference_frame="base_link")
+                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(globalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
 
+                
                 marker_publisher.publishPlane(np.array([0.146]),targetPosWeirdFrame)
 
                 marker_publisher.publish_arrow_between_points(
@@ -139,31 +143,34 @@ def main(args=None):
 
                 #print_current_position(robot,frame)
                 
-                position = [relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]]
+                position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll,pitch,yaw]
                 robot.move_to_pose(position, euler_angles,frame)
                 if robot.moveit2.motion_suceeded:
                     break
                 counter += 1
 
+            simulator.generate_measurement_pose(robot = robot, pose = np.concatenate((endEffectorPosWeirdFrame,endEffectorOrientWeirdFrame)), calibrate=True, frame = "base_link")
+            simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample-1])
 
-            #actual, commanded = simulator.generate_measurement(i)
+
+            '''#actual, commanded = simulator.generate_measurement(i)
             actual = np.concatenate((measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame))
             commanded = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
             if actual is not None and commanded is not None:
                 measurements_actual[valid_measurements] = actual
                 measurements_commanded[valid_measurements] = commanded
-                valid_measurements += 1
-                print(f"Measurement {i}: Generated")
+                valid_measurements += 1'''
+            print(f"Measurement {i}: Generated")
             time.sleep(0.01)
 
-        # Trim arrays to only include valid measurements
+        '''# Trim arrays to only include valid measurements
         if valid_measurements < simulator.n:
             measurements_actual = measurements_actual[:valid_measurements]
-            measurements_commanded = measurements_commanded[:valid_measurements]
+            measurements_commanded = measurements_commanded[:valid_measurements]'''
         
         # Process all measurements for this iteration
-        results = simulator.process_iteration_results(measurements_actual, measurements_commanded)
+        results = simulator.process_iteration_results(simulator.poseArrayActual, simulator.poseArrayCommanded,simulator.numJacobianTrans,simulator.numJacobianRot)
     
     # Save results to CSV
     #simulator.save_to_csv()
