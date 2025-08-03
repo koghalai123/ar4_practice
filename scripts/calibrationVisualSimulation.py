@@ -145,7 +145,7 @@ def main(args=None):
                 
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll,pitch,yaw]
-                robot.move_to_pose(position, euler_angles,frame)
+                robot.move_pose(position, euler_angles,frame)
                 if robot.moveit2.motion_suceeded:
                     break
                 counter += 1

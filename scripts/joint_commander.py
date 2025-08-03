@@ -7,7 +7,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Pose, Point, Quaternion
 from pymoveit2 import MoveIt2
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
-
+import time
 class JointCommander(Node):
     def __init__(self):
         super().__init__("joint_commander")
@@ -19,9 +19,10 @@ class JointCommander(Node):
             end_effector_name="link_6",
             group_name="ar_manipulator",
         )
-        
-        self.moveit2.max_velocity = 0.75
-        self.moveit2.max_acceleration = 0.5
+        time.sleep(0.1)
+        self.resetErrors()
+        self.moveit2.max_velocity = 2
+        self.moveit2.max_acceleration = 2
         
         # Circular motion parameters
         self.center = Point(x=0.5, y=0.0, z=0.5)  # Default center position
@@ -39,8 +40,15 @@ class JointCommander(Node):
         self.get_logger().info("  - Circular motion: enter 'circle' followed by parameters (optional)")
         self.get_logger().info("     Example: 'circle center=0.5,0,0.5 radius=0.1 revs=1 plane=xy'")
 
+    def resetErrors(self):
+        """Reset MoveIt2 state and ensure joint states are available"""
+        print("Resetting MoveIt2 state...")
+        
+        self.moveit2.reset_new_joint_state_checker()
+        self.moveit2.force_reset_executing_state()
     def display_current_pose(self):
         """Display the current end effector pose"""
+        self.resetErrors()
         fk_result = self.moveit2.compute_fk()
         
         if fk_result is None:
