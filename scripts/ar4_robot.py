@@ -3,169 +3,119 @@
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from pymoveit2 import MoveIt2
-from geometry_msgs.msg import Point, Quaternion, Pose
+from moveit.planning import MoveItPy
+from moveit.core.robot_state import RobotState
+from geometry_msgs.msg import PoseStamped, Point, Quaternion, Pose
 from tf_transformations import quaternion_from_euler, euler_from_quaternion, euler_matrix, euler_from_matrix
+from moveit_configs_utils import MoveItConfigsBuilder
 import time
 
 def create_transformation_matrix(translation, euler_angles):
     """Create a 4x4 homogeneous transformation matrix."""
-    transform = euler_matrix(euler_angles[0], euler_angles[1], euler_angles[2], axes='sxyz')
+    transform = euler_matrix(eulerAngles[0], eulerAngles[1], eulerAngles[2], axes='sxyz')
     transform[:3, 3] = translation
     return transform
 
-
 class AR4_ROBOT(Node):
-    def __init__(self, use_joint_positions):
-        rclpy.init()
+    def __init__(self):
         super().__init__("ar4_robot_commander")
         
-        self.moveit2 = MoveIt2(
-            node=self,
-            joint_names=["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"],
-            base_link_name="base_link",
-            end_effector_name="link_6",
-            group_name="ar_manipulator",
-        )
-        
-        self.moveit2.max_velocity = 1.5
-        self.moveit2.max_acceleration = 3
-        
-        self.use_joint_positions = use_joint_positions
-        
-        if self.use_joint_positions:
-            self.get_logger().info("Joint commander initialized. Waiting for connection to Gazebo/Physical Robot.")
-        else:
-            self.get_logger().info("Pose commander initialized. Waiting for connection to Gazebo/Physical Robot.")
+        # Load the configuration files for your robot. 
+        # Replace "ar4_moveit_config" with the name of your actual MoveIt configuration package.
+        moveit_config = MoveItConfigsBuilder(
+            robot_name="ar4_robot",
+            package_name="ar4_moveit_config" 
+        ).to_moveit_configs()
+
+        # Instantiate MoveItPy with your robot's configuration
+        self.moveit_py = MoveItPy(node=self, config_dict=moveit_config.to_dict())
+
+        # Get the planning component for your robot's arm group
+        self.ar_manipulator = self.moveit_py.get_planning_component("ar_manipulator")
+        self.get_logger().info("MoveItPy commander initialized for AR4 robot.")
+
+        # Set planner parameters
+        self.ar_manipulator.set_parameters({"max_velocity_scaling_factor": 1.5, "max_acceleration_scaling_factor": 3.0})
 
         # Reference transformation for the end effector
-        self.reference_translation = [0.0, 0.0, 0.0]  # Example translation (x, y, z)
-        self.reference_rotation = [0.0, 0.0, np.pi * 1 / 2]  # Example rotation (roll, pitch, yaw)
+        self.reference_translation = [0.0, 0.0, 0.0]
+        self.reference_rotation = [0.0, 0.0, np.pi * 1 / 2]
         self.transformation_matrix = create_transformation_matrix(self.reference_translation, self.reference_rotation)
         self.inverse_transformation_matrix = np.linalg.inv(self.transformation_matrix)
 
         self.angle_offsets = {
-            "roll": 0,  # Example offset in radians
+            "roll": 0.0,
             "pitch": 1.571,
             "yaw": 1.571
         }
         
         self.pos_offsets = {
-            "x": 0.32783003,  # Example offset in radians
+            "x": 0.32783003,
             "y": -0.00699888,
             "z": 0.47477099
         }
 
-    def resetErrors(self):
-        """Reset MoveIt2 state and ensure joint states are available"""
-        print("Resetting MoveIt2 state...")
+    def plan_and_execute(self, planning_component):
+        """A helper function to plan and execute a motion."""
+        self.get_logger().info("Planning trajectory...")
+        plan_result = planning_component.plan()
         
-        self.moveit2.reset_new_joint_state_checker()
-        self.moveit2.force_reset_executing_state()
-        
-        '''# Wait for joint states to be available
-        attempts = 0
-        while self.moveit2.joint_state is None and attempts < 5:
-            print("Waiting for joint states...")
-            time.sleep(0.1)
-            attempts += 1
-        
-        if self.moveit2.joint_state is None:
-            print("Failed to get joint states after reset")
-            return False
+        if plan_result:
+            self.get_logger().info("Executing plan...")
+            self.moveit_py.execute(plan_result.trajectory)
+        else:
+            self.get_logger().error("Planning failed.")
             
-        print("MoveIt2 state reset successful")'''
-        return True
-    def toMyPreferredFrame(self, position, eulerAngles, reference_frame="base_link"):
-        # Apply transformation to the pose. Euler Angles should be in the order: roll, pith, yaw
-        # My preferred frame has the robot's forward direction as x, leftwards direction as y, and upwards direction as z. 
-        #At the home position, the end effector has 0 rotations for all euler angles
-        position = np.array([position[0], position[1], position[2], 1.0])
-        global_position = np.dot(self.transformation_matrix, position)[:3]
-        transformed_orientation = euler_from_matrix(
-            np.dot(self.transformation_matrix[:3, :3], euler_matrix(eulerAngles[0], eulerAngles[1], eulerAngles[2], axes='sxyz')[:3, :3]),
-            axes='sxyz'
-        )
-        global_orientation = np.array([
-            transformed_orientation[1] + self.angle_offsets["roll"],
-            transformed_orientation[0] + self.angle_offsets["pitch"],
-            transformed_orientation[2] + self.angle_offsets["yaw"]
-        ])
-        
-        homeRefFramePos = global_position- np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
-        if reference_frame=="base_link":
-            return global_position, global_orientation
-        else:
-            return homeRefFramePos, global_orientation
-    
-    def get_ik(self, position, eulerAngles, frame="base_link"):
-        
-        
-        transformed_position, transformed_orientation = self.fromMyPreferredFrame(position, eulerAngles, old_reference_frame=frame, new_reference_frame="base_link")
-        
-        quat = quaternion_from_euler(transformed_orientation[0], transformed_orientation[1], transformed_orientation[2])
-        
-        target_pose = Pose()
-        target_pose.position.x = transformed_position[0]
-        target_pose.position.y = transformed_position[1]
-        target_pose.position.z = transformed_position[2]
-        
-        
-        
-        target_pose.orientation.x = quat[0]
-        target_pose.orientation.y = quat[1]
-        target_pose.orientation.z = quat[2]
-        target_pose.orientation.w = quat[3]
+    def move_to_joint_positions(self, joint_positions):
+        """Move to specific joint positions."""
+        self.ar_manipulator.set_start_state_to_current_state()
+        self.ar_manipulator.set_goal_state(joint_state=joint_positions)
+        self.plan_and_execute(self.ar_manipulator)
 
-        # Compute inverse kinematics
-        jointPositions = self.moveit2.compute_ik(
-            position=target_pose.position,
-            quat_xyzw=target_pose.orientation,
-        )
-
-        # Check if IK was successful
-        if jointPositions is not None:
-            print("Joint angles found")
-            #for name, position in zip(jointPositions.name, jointPositions.position):
-            #    print(f"{name}: {position}")
-            return np.array(jointPositions.position[:6])
-        else:
-            print("Failed to compute IK.")
-            return None
+    def move_pose(self, inputPosition, eulerAngles, reference_frame="base_link"):
+        """Move to a specific pose."""
         
-    
+        transformed_position, transformed_orientation = self.fromMyPreferredFrame(
+            inputPosition, eulerAngles, old_reference_frame=reference_frame, new_reference_frame="base_link"
+        )
+        
+        quat = quaternion_from_euler(
+            transformed_orientation[0], transformed_orientation[1], transformed_orientation[2]
+        )
+        
+        target_pose = PoseStamped()
+        target_pose.header.frame_id = "base_link"
+        target_pose.pose.position.x = float(transformed_position[0])
+        target_pose.pose.position.y = float(transformed_position[1])
+        target_pose.pose.position.z = float(transformed_position[2])
+        target_pose.pose.orientation.x = float(quat[0])
+        target_pose.pose.orientation.y = float(quat[1])
+        target_pose.pose.orientation.z = float(quat[2])
+        target_pose.pose.orientation.w = float(quat[3])
+        
+        self.ar_manipulator.set_start_state_to_current_state()
+        self.ar_manipulator.set_goal_state(pose_stamped=target_pose, pose_link="link_6")
+        self.plan_and_execute(self.ar_manipulator)
+
     def get_current_pose(self, reference_frame="base_link"):
         """Get the current end effector pose."""
-        #self.moveit2.reset_new_joint_state_checker()
-        fk_result = self.moveit2.compute_fk()
         
-        if fk_result is None:
-            self.get_logger().warn("Could not compute current pose")
-            return None
-            
-        if isinstance(fk_result, list):
-            current_pose = fk_result[0]  # Take first result if multiple
-        else:
-            current_pose = fk_result
-
-        # Convert quaternion to Euler angles
+        current_state = self.moveit_py.get_current_state()
+        current_pose = current_state.get_pose("link_6")
+        
         quat = [
-            current_pose.pose.orientation.x,
-            current_pose.pose.orientation.y,
-            current_pose.pose.orientation.z,
-            current_pose.pose.orientation.w
+            current_pose.orientation.x,
+            current_pose.orientation.y,
+            current_pose.orientation.z,
+            current_pose.orientation.w
         ]
         roll, pitch, yaw = euler_from_quaternion(quat)
         eulerAngles = np.array([roll, pitch, yaw])
         
-        position = np.array([current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z])
+        position = np.array([current_pose.position.x, current_pose.position.y, current_pose.position.z])
         position, orientation = self.toMyPreferredFrame(position, eulerAngles, reference_frame)
         
         return position, orientation
-        '''self.transformedOrientation = transformed_orientation
-        self.globalOrientation = global_orientation
-        self.homeRefFramePos = homeRefFramePos
-        self.homeRefFrameOrientation = global_orientation'''
         
     def fromMyPreferredFrame(self, position, eulerAngles, old_reference_frame="base_link", new_reference_frame="base_link"):
         if new_reference_frame == old_reference_frame:
@@ -186,77 +136,24 @@ class AR4_ROBOT(Node):
 
         return transformed_position, transformed_orientation
 
-    def move_pose(self, inputPosition, eulerAngles, reference_frame="base_link"):
-        """Move to a specific pose."""
+def main():
+    rclpy.init()
+    ar4_robot = AR4_ROBOT()
 
-        # Transform the input position and orientation
-        transformed_position, transformed_orientation = self.fromMyPreferredFrame(
-            inputPosition, eulerAngles, old_reference_frame=reference_frame, new_reference_frame="base_link"
-        )
+    # Example usage: Move to a specific pose
+    ar4_robot.get_logger().info("Moving to target pose...")
+    target_position = [0.3, 0.2, 0.4]
+    target_orientation_euler = [np.pi/2, 0.0, 0.0]
+    ar4_robot.move_pose(target_position, target_orientation_euler)
 
-        # Convert transformed orientation to quaternion
-        quat = quaternion_from_euler(
-            transformed_orientation[0], transformed_orientation[1], transformed_orientation[2]
-        )
-        '''orientation = Quaternion(
-            x=(quat[0]),  # Convert numpy.float64 to float
-            y=(quat[1]),  # Convert numpy.float64 to float
-            z=(quat[2]),  # Convert numpy.float64 to float
-            w=(quat[3])   # Convert numpy.float64 to float
-        )
+    time.sleep(2)
 
-        # Convert transformed position to Point
-        position = Point(
-            x=(transformed_position[0]),  # Convert numpy.float64 to float
-            y=(transformed_position[1]),  # Convert numpy.float64 to float
-            z=(transformed_position[2])   # Convert numpy.float64 to float
-        )'''
+    # Example usage: Move to a specific joint position
+    ar4_robot.get_logger().info("Moving to target joint state...")
+    target_joint_state = [0.0, -1.0, 1.5, 0.0, 0.5, 0.0]
+    ar4_robot.move_to_joint_positions(target_joint_state)
 
-        position = Point(x=(transformed_position[0]), y=(transformed_position[1]), z=(transformed_position[2]))
-        orientation = Quaternion(x=(quat[0]), y=(quat[1]), z=(quat[2]), w=(quat[3]))    
-        
+    rclpy.shutdown()
 
-        transformed_position = np.round(transformed_position, 3)
-        quat = np.round(quat, 3)
-
-        target_pose = Pose()
-        target_pose.position.x = float(transformed_position[0])
-        target_pose.position.y = float(transformed_position[1]) 
-        target_pose.position.z = float(transformed_position[2])
-        target_pose.orientation.x = float(quat[0])
-        target_pose.orientation.y = float(quat[1])
-        target_pose.orientation.z = float(quat[2])
-        target_pose.orientation.w = float(quat[3])
-
-        position_tuple = (
-            float(transformed_position[0]),
-            float(transformed_position[1]),
-            float(transformed_position[2])
-        )
-        quat_tuple = (
-            float(quat[0]),
-            float(quat[1]),
-            float(quat[2]),
-            float(quat[3])
-        )
-
-        # Move to the pose using tuples
-        self.moveit2.move_to_pose(position=position_tuple, quat_xyzw=quat_tuple)
-
-
-        #transformed_position = np.dot(self.inverse_transformation_matrix, position)[:3]
-        #quat = quaternion_from_euler(transformed_orientation[0], transformed_orientation[1], transformed_orientation[2])
-        #orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
-
-        #position_tuple = (float(transformed_position[0]), float(transformed_position[1]), float(transformed_position[2]))
-        #quat_tuple = (float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
-        # Move to the pose
-        #self.moveit2.move_to_pose(position=position, quat_xyzw=orientation)
-        #self.moveit2.move_to_pose(pose=target_pose)
-        #self.moveit2.move_to_pose(position=Point(x=transformed_position[0], y=transformed_position[1], z=transformed_position[2]), quat_xyzw=orientation)
-        self.moveit2.wait_until_executed()
-
-    def move_to_joint_positions(self, joint_positions):
-        """Move to specific joint positions."""
-        self.moveit2.move_to_configuration(joint_positions)
-        self.moveit2.wait_until_executed()
+if __name__ == '__main__':
+    main()
