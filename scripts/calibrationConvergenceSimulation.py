@@ -193,7 +193,7 @@ class CalibrationSimulator:
             self.wristToBase = symbolic_matrix.inv() * self.wristToBase
             self.symbolic_matrices[key] = symbolic_matrix
         #baseToWrist = sp.eye(4)
-        
+        self.originToWrist = self.originToBase*self.baseToWrist
         # Set up transformation chain
         if self.camera_mode:
             # Camera mode: origin -> base -> wrist -> camera
@@ -211,7 +211,7 @@ class CalibrationSimulator:
             self.rotation_matrix = self.originToCamera[:3, :3]
         else:
             # Standard mode: origin -> base -> wrist
-            self.originToWrist = self.originToBase*self.baseToWrist
+            
             self.translation_vector = self.originToWrist[:3, 3]
             self.rotation_matrix = self.originToWrist[:3, :3]
         
@@ -244,11 +244,21 @@ class CalibrationSimulator:
         x = sp.symbols('x1:7')
         q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
         
-        M_num_actual = self.baseToWrist.subs({
-            **{q[k]: joint_positions[k] for k in range(6)},
-            **{l[k]: joint_lengths[k] for k in range(6)},
-            **{x[k]: XOffsets[k] for k in range(6)}
-        })   
+        if self.camera_mode:
+            # Camera mode: use origin to camera transformation (includes wrist-to-camera)
+            M_num_actual = self.originToCamera.subs({
+                **{q[k]: joint_positions[k] for k in range(6)},
+                **{l[k]: joint_lengths[k] for k in range(6)},
+                **{x[k]: XOffsets[k] for k in range(6)}
+            })
+        else:
+            # Standard mode: use origin to wrist transformation
+            M_num_actual = self.originToWrist.subs({
+                **{q[k]: joint_positions[k] for k in range(6)},
+                **{l[k]: joint_lengths[k] for k in range(6)},
+                **{x[k]: XOffsets[k] for k in range(6)}
+            })
+        
         '''M_num_inverse = wristToBase.subs({
         **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
         **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
@@ -259,57 +269,6 @@ class CalibrationSimulator:
         
         return pose
     
-    def get_camera_position_actual(self, joint_positions):
-        """Get actual camera position (with robot errors) for camera mode"""
-        if not self.camera_mode:
-            raise ValueError("Camera mode must be enabled")
-            
-        # Use actual joint lengths and base offsets (with errors)
-        joint_lengths = self.joint_lengths_actual
-        XOffsets = self.XActual.flatten()
-        
-        l = sp.symbols('l1:7')
-        x = sp.symbols('x1:7')
-        q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-        
-        # Camera transformation includes the fixed camera mount
-        M_camera = self.originToCamera.subs({
-            **{q[k]: joint_positions[k] for k in range(6)},
-            **{l[k]: joint_lengths[k] for k in range(6)},
-            **{x[k]: XOffsets[k] for k in range(6)}
-        })
-        
-        rot_matrix = M_camera[:3, :3]
-        trans = np.array(M_camera[:3, 3]).flatten().T
-        pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        
-        return pose
-    
-    def get_camera_position_commanded(self, joint_positions):
-        """Get commanded camera position (without robot errors) for camera mode"""
-        if not self.camera_mode:
-            raise ValueError("Camera mode must be enabled")
-            
-        # Use nominal joint lengths and base offsets (no errors)
-        joint_lengths = self.joint_lengths_nominal
-        XOffsets = self.XNominal
-        
-        l = sp.symbols('l1:7')
-        x = sp.symbols('x1:7')
-        q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
-        
-        # Camera transformation includes the fixed camera mount
-        M_camera = self.originToCamera.subs({
-            **{q[k]: joint_positions[k] for k in range(6)},
-            **{l[k]: joint_lengths[k] for k in range(6)},
-            **{x[k]: XOffsets[k] for k in range(6)}
-        })
-        
-        rot_matrix = M_camera[:3, :3]
-        trans = np.array(M_camera[:3, 3]).flatten().T
-        pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        
-        return pose
     
     def generate_measurement_pose(self, robot, pose = None, calibrate=False, frame = "end_effector_link"):
         
@@ -333,14 +292,13 @@ class CalibrationSimulator:
         #    joint_state=np.array([0,0,0,0,0,0]).tolist(),  # Convert NumPy array to list
         #)
         if self.camera_mode:
-            target_positions_world=None
-            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(target_positions_world, joint_positions_commanded, calibrate)
+            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_commanded=joint_positions_commanded, calibrate=calibrate)
         else:
-            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded, calibrate)
+            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded=joint_positions_commanded, calibrate=calibrate)
 
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
 
-    def generate_measurement_joints_camera(self, target_positions_world=None, joint_positions_commanded=None, calibrate=True):
+    def generate_measurement_joints_camera(self, joint_positions_commanded=None, calibrate=True):
         """Generate camera-based measurements using displacement vectors to known targets
         
         Args:
@@ -352,11 +310,14 @@ class CalibrationSimulator:
         """
         if not self.camera_mode:
             raise ValueError("Camera mode must be enabled to use this method")
-            
-        if target_positions_world is None:
+        
+        pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded=joint_positions_commanded, calibrate=calibrate)
+        if self.target_positions_world is None:
             # Generate random target positions in world frame
-            target_positions_world = np.array([0.3,0,0])
-            
+            target_positions_world = np.array([0.0,-0.3,0])
+        else:
+            target_positions_world = self.target_positions_world
+        
         # Generate random joint positions for measurements
         #joint_positions_commanded = np.random.uniform(-2.5, 2.5, (self.n, 6))
         
@@ -370,7 +331,9 @@ class CalibrationSimulator:
         target_displacements = np.zeros((self.n, 3))
         
         # Get actual camera position in world frame (with robot errors)
-        camera_pose_actual = self.get_camera_position_actual(self.joint_positions_actual)
+        joint_lengths = self.joint_lengths_actual
+        XOffsets = self.XActual.flatten()
+        camera_pose_actual = self.get_fk_calibration_model(joint_positions=self.joint_positions_actual, joint_lengths=joint_lengths, XOffsets=XOffsets)
         camera_position_actual = camera_pose_actual[:3]
         camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
         
@@ -388,7 +351,9 @@ class CalibrationSimulator:
         self.target_displacements_measured = target_displacements
         
         # Calculate expected displacement using commanded/nominal parameters
-        camera_pose_commanded = self.get_camera_position_commanded(joint_positions_commanded)
+        joint_lengths_commanded = self.joint_lengths_nominal
+        XOffsets_commanded = self.XNominal
+        camera_pose_commanded = self.get_fk_calibration_model(joint_positions=joint_positions_commanded, joint_lengths=joint_lengths_commanded, XOffsets=XOffsets_commanded)
         camera_position_commanded = camera_pose_commanded[:3]
         camera_rotation_commanded = R.from_euler('xyz', camera_pose_commanded[3:6]).as_matrix()
         
@@ -396,7 +361,7 @@ class CalibrationSimulator:
         displacement_camera_expected = camera_rotation_commanded.T @ displacement_world_expected
         self.target_displacements_expected = displacement_camera_expected
             
-        return joint_positions_commanded, target_displacements
+        return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
     
     def generate_measurement_joints(self, joint_positions_commanded = None, calibrate=False):
         """Generate a single measurement pair (actual and commanded)"""
@@ -630,7 +595,7 @@ class CalibrationSimulator:
 def main(args=None):
     # Create simulator
     simulator = CalibrationSimulator(n=8, numIters=10,camera_mode=True,dQMagnitude=0.1, dLMagnitude=0.0, dXMagnitude=0.1)
-    
+    simulator.target_positions_world = np.array([0.0, -0.3, 0])
     robot = AR4Robot()
     robot.disable_logging()
     # Process each iteration separately
