@@ -417,71 +417,6 @@ class AR4Robot:
         self.moveit_client.destroy_node()
         rclpy.shutdown()
     
-    def get_ik(self, position, orientation_euler=None, orientation_quat=None, 
-               frame_id="base_link", target_link="link_6", avoid_collisions=True):
-        """
-        Calculate inverse kinematics for a specific pose.
-        
-        Parameters:
-        - position: [x, y, z] position in meters
-        - orientation_euler: [roll, pitch, yaw] in radians (optional)
-        - orientation_quat: [x, y, z, w] quaternion (optional)
-        - frame_id: Reference frame for the pose
-        - target_link: Target link name
-        - avoid_collisions: Whether to avoid collisions during IK calculation
-        
-        Returns:
-        - Dictionary mapping joint names to angles (in radians) if solution found
-        - None if no IK solution found
-        """
-        # Determine quaternion
-        if orientation_quat is not None:
-            quat_xyzw = orientation_quat
-        elif orientation_euler is not None:
-            quat = quaternion_from_euler(
-                float(orientation_euler[0]), 
-                float(orientation_euler[1]), 
-                float(orientation_euler[2])
-            )
-            quat_xyzw = np.array([float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])])
-        else:
-            # Default orientation (identity)
-            quat_xyzw = np.array([0.0, 0.0, 0.0, 1.0])
-        
-        self._log_info("=== Calculating IK for Pose ===")
-        self._log_info(f"Target position: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
-        if orientation_euler is not None:
-            self._log_info(f"Target orientation (RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
-        
-        # Call MoveIt's IK service directly
-        joint_state = self._call_ik_service(
-            position=position,
-            quat_xyzw=quat_xyzw,
-            frame_id=frame_id,
-            target_link=target_link,
-            avoid_collisions=avoid_collisions
-        )
-        
-        if joint_state is None:
-            self._log_warn("No IK solution found")
-            return None
-        
-        # Convert joint state message to dictionary
-        joint_positions = {}
-        for i, name in enumerate(joint_state.name):
-            if name in self.moveit_client.joint_names:
-                joint_positions[name] = joint_state.position[i]
-        
-        if not joint_positions:
-            self._log_warn("IK solution found but no valid joint positions")
-            return None
-        
-        self._log_info("IK solution found:")
-        for joint, value in joint_positions.items():
-            self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
-        
-        return joint_positions
-    
     def _call_ik_service(self, position, quat_xyzw, frame_id="base_link", 
                          target_link="link_6", avoid_collisions=True):
         """
@@ -513,7 +448,7 @@ class AR4Robot:
         request = GetPositionIK.Request()
         
         # Set up the IK request
-        request.ik_request.group_name = "ar4_arm"
+        request.ik_request.group_name = "ar_manipulator"
         request.ik_request.ik_link_name = target_link
         request.ik_request.avoid_collisions = avoid_collisions
         request.ik_request.timeout.sec = 5
@@ -559,42 +494,8 @@ class AR4Robot:
             self._log_error(f"IK service call exception: {e}")
             return None
     
-    def get_ik_preferred_frame(self, position, orientation_euler, 
-                               reference_frame="base_link", target_link="link_6", 
-                               avoid_collisions=True):
-        """
-        Calculate inverse kinematics for a specific pose in preferred frame.
-        
-        Parameters:
-        - position: [x, y, z] position in preferred frame
-        - orientation_euler: [roll, pitch, yaw] in preferred frame (in radians)
-        - reference_frame: Reference frame for the pose
-        - target_link: Target link name
-        - avoid_collisions: Whether to avoid collisions during IK calculation
-        
-        Returns:
-        - Dictionary mapping joint names to angles (in radians) if solution found
-        - None if no IK solution found
-        """
-        # Convert from preferred frame to MoveIt internal frame
-        moveit_position, moveit_orientation = self.from_preferred_frame(
-            position, orientation_euler, reference_frame, "base_link"
-        )
-        
-        self._log_info(f"Converting from preferred frame: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
-        self._log_info(f"To MoveIt frame: [{moveit_position[0]:.3f}, {moveit_position[1]:.3f}, {moveit_position[2]:.3f}]")
-        
-        # Call the regular IK function with converted pose
-        return self.get_ik(
-            position=moveit_position,
-            orientation_euler=moveit_orientation,
-            frame_id="base_link",
-            target_link=target_link,
-            avoid_collisions=avoid_collisions
-        )
-    
-    def get_ik_weird_frame(self, position, orientation_euler=None, orientation_quat=None, 
-           frame_id="base_link", target_link="link_6", avoid_collisions=True):
+    def get_ik(self, position, euler_angles=None, 
+               frame_id="base_link", target_link="link_6", avoid_collisions=True):
         """
         Calculate inverse kinematics for a specific pose.
         
@@ -610,15 +511,48 @@ class AR4Robot:
         - Dictionary mapping joint names to angles (in radians) if solution found
         - None if no IK solution found
         """
-        # Call the standard get_ik function
-        return self.get_ik(
-            position=position,
-            orientation_euler=orientation_euler,
-            orientation_quat=orientation_quat,
-            frame_id=frame_id,
+                
+        # Convert from input frame to MoveIt's base_link frame if needed
+        transformed_position, transformed_orientation = self.from_preferred_frame(position, euler_angles, old_reference_frame=frame_id, new_reference_frame="base_link")
+        quat = quaternion_from_euler(
+                float(transformed_orientation[0]), 
+                float(transformed_orientation[1]), 
+                float(transformed_orientation[2])
+            )
+        quat_xyzw = np.array([float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])])
+
+        
+        # Call MoveIt's IK service directly
+        joint_state = self._call_ik_service(
+            position=transformed_position,
+            quat_xyzw=quat_xyzw,
+            frame_id="base_link",  # Always use base_link for MoveIt
             target_link=target_link,
             avoid_collisions=avoid_collisions
         )
+        
+        if joint_state is None:
+            self._log_warn("No IK solution found")
+            return None
+        
+        # Convert joint state message to dictionary
+        joint_positions = {}
+        for i, name in enumerate(joint_state.name):
+            # Only include joints that are part of the manipulator group
+            if name.startswith('joint_'):
+                joint_positions[name] = joint_state.position[i]
+        
+        if not joint_positions:
+            self._log_warn("IK solution found but no valid joint positions")
+            return None
+        
+        self._log_info("IK solution found:")
+        for joint, value in joint_positions.items():
+            self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
+        
+        joint_array = np.array(list(joint_positions.values()))
+        
+        return joint_array
 
     
 

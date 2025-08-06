@@ -2,7 +2,8 @@
 
 import rclpy
 from rclpy.node import Node
-from pymoveit2 import MoveIt2
+#from pymoveit2 import MoveIt2
+from ar4_robot_py import AR4Robot
 from rclpy.callback_groups import ReentrantCallbackGroup
 import numpy as np
 import sympy as sp
@@ -199,7 +200,7 @@ class CalibrationConvergenceSimulator:
         #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
         
         #pos,ori = robot.get_current_pose()
-        joint_positions_commanded = robot.get_ik(position=position, orientation_euler=orientation, frame_id=frame)
+        joint_positions_commanded = robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
         
         #joint_lengths = self.joint_lengths_nominal
         #XOffsets = self.XNominal
@@ -449,9 +450,9 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10)
-    from ar4_robot import AR4_ROBOT
-    use_joint_positions = 0
-    robot = AR4_ROBOT(use_joint_positions)
+    
+    robot = AR4Robot()
+    robot.disable_logging()
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")

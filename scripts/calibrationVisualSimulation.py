@@ -79,7 +79,7 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
 
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=5, dQMagnitude=0.0, dLMagnitude=0.0,dXMagnitude=0.0)
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=5, dQMagnitude=0.1, dLMagnitude=0.0,dXMagnitude=0.1)
     
     '''target_pose = Pose()
     target_pose.position.x = 0.0
