@@ -24,8 +24,11 @@ import time
 import numpy as np
 
 class MoveItActionClient(Node):
-    def __init__(self):
+    def __init__(self, enable_logging=True):
         super().__init__('moveit_action_client')
+        
+        # Logging control
+        self.logging_enabled = enable_logging
         
         # Create action client for move_group
         self._action_client = ActionClient(self, MoveGroup, '/move_action')
@@ -45,21 +48,42 @@ class MoveItActionClient(Node):
         self._current_joint_state = None
         
         # Wait for the action server
-        self.get_logger().info("Waiting for move_group action server...")
+        self._log_info("Waiting for move_group action server...")
         if not self._action_client.wait_for_server(timeout_sec=10.0):
             self.get_logger().error("move_group action server not available!")
             raise RuntimeError("move_group action server not available!")
         
-        self.get_logger().info("Connected to move_group action server")
+        self._log_info("Connected to move_group action server")
         
         # Group name - this should match your SRDF
         self.group_name = "ar_manipulator"
         
         # Wait for joint states
-        self.get_logger().info("Waiting for joint states...")
+        self._log_info("Waiting for joint states...")
         while self._current_joint_state is None and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
-        self.get_logger().info("Joint states received")
+        self._log_info("Joint states received")
+    
+    def _log_info(self, message):
+        """Centralized logging method that respects the logging_enabled setting"""
+        if self.logging_enabled:
+            self.get_logger().info(message)
+    
+    def _log_warn(self, message):
+        """Centralized warning logging method (always outputs)"""
+        self.get_logger().warn(message)
+    
+    def _log_error(self, message):
+        """Centralized error logging method (always outputs)"""
+        self.get_logger().error(message)
+    
+    def enable_logging(self):
+        """Enable informational logging"""
+        self.logging_enabled = True
+    
+    def disable_logging(self):
+        """Disable informational logging (warnings and errors still shown)"""
+        self.logging_enabled = False
 
     def _joint_state_callback(self, msg):
         """Callback to store current joint state"""
@@ -85,7 +109,7 @@ class MoveItActionClient(Node):
         try:
             # Wait for FK service
             if not self._fk_client.wait_for_service(timeout_sec=2.0):
-                self.get_logger().warn("FK service not available")
+                self._log_warn("FK service not available")
                 return None
             
             # Create FK request
@@ -103,12 +127,12 @@ class MoveItActionClient(Node):
                 if response.error_code.val == 1 and len(response.pose_stamped) > 0:  # SUCCESS
                     return response.pose_stamped[0]
                 else:
-                    self.get_logger().warn(f"FK computation failed with error code: {response.error_code.val}")
+                    self._log_warn(f"FK computation failed with error code: {response.error_code.val}")
             else:
-                self.get_logger().warn("FK service call timed out")
+                self._log_warn("FK service call timed out")
                 
         except Exception as e:
-            self.get_logger().warn(f"Error getting end effector pose: {e}")
+            self._log_warn(f"Error getting end effector pose: {e}")
             
         return None
 
@@ -117,11 +141,11 @@ class MoveItActionClient(Node):
         # Print joint positions
         joints = self.get_current_joint_values()
         if joints:
-            self.get_logger().info(f"{prefix} - Joint positions:")
+            self._log_info(f"{prefix} - Joint positions:")
             for joint, value in joints.items():
-                self.get_logger().info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
+                self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
         else:
-            self.get_logger().warn("No joint state available")
+            self._log_warn("No joint state available")
             
         # Print end effector pose
         pose = self.get_end_effector_pose(link_name)
@@ -133,15 +157,15 @@ class MoveItActionClient(Node):
             quat = [orient.x, orient.y, orient.z, orient.w]
             roll, pitch, yaw = euler_from_quaternion(quat)
             
-            self.get_logger().info(f"{prefix} - End effector pose ({link_name}):")
-            self.get_logger().info(f"  Position: x={pos.x:.3f}, y={pos.y:.3f}, z={pos.z:.3f} m")
-            self.get_logger().info(f"  Orientation (RPY): roll={roll:.3f} ({np.degrees(roll):.1f}°), "
+            self._log_info(f"{prefix} - End effector pose ({link_name}):")
+            self._log_info(f"  Position: x={pos.x:.3f}, y={pos.y:.3f}, z={pos.z:.3f} m")
+            self._log_info(f"  Orientation (RPY): roll={roll:.3f} ({np.degrees(roll):.1f}°), "
                                  f"pitch={pitch:.3f} ({np.degrees(pitch):.1f}°), "
                                  f"yaw={yaw:.3f} ({np.degrees(yaw):.1f}°)")
-            self.get_logger().info(f"  Orientation (Quat): x={orient.x:.3f}, y={orient.y:.3f}, "
+            self._log_info(f"  Orientation (Quat): x={orient.x:.3f}, y={orient.y:.3f}, "
                                  f"z={orient.z:.3f}, w={orient.w:.3f}")
         else:
-            self.get_logger().warn("Could not get end effector pose")
+            self._log_warn("Could not get end effector pose")
 
     def wait_for_execution_complete(self, timeout=30.0):
         """Wait for any ongoing execution to complete"""
@@ -155,11 +179,11 @@ class MoveItActionClient(Node):
                 req.components.components = req.components.SCENE_SETTINGS
                 future = self._planning_scene_client.call_async(req)
                 rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-                self.get_logger().info("Planning scene reset")
+                self._log_info("Planning scene reset")
             else:
-                self.get_logger().warn("Planning scene service not available")
+                self._log_warn("Planning scene service not available")
         except Exception as e:
-            self.get_logger().warn(f"Could not reset planning scene: {e}")
+            self._log_warn(f"Could not reset planning scene: {e}")
 
     def move_to_joint_configuration(self, joint_positions, velocity_scaling=0.3, acceleration_scaling=0.3):
         """
@@ -228,7 +252,7 @@ class MoveItActionClient(Node):
             goal_msg.planning_options = planning_options
             
             # Send the goal
-            self.get_logger().info("Sending goal to move_group...")
+            self._log_info("Sending goal to move_group...")
             future = self._action_client.send_goal_async(goal_msg)
             
             # Wait for the goal to be accepted
@@ -236,10 +260,10 @@ class MoveItActionClient(Node):
             
             goal_handle = future.result()
             if not goal_handle.accepted:
-                self.get_logger().error("Goal rejected!")
+                self._log_error("Goal rejected!")
                 return False
             
-            self.get_logger().info("Goal accepted, waiting for result...")
+            self._log_info("Goal accepted, waiting for result...")
             
             # Wait for the result
             result_future = goal_handle.get_result_async()
@@ -247,7 +271,7 @@ class MoveItActionClient(Node):
             
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
-                self.get_logger().info("Movement completed successfully!")
+                self._log_info("Movement completed successfully!")
                 
                 # Wait for execution to complete and update state
                 self.wait_for_execution_complete()
@@ -258,11 +282,11 @@ class MoveItActionClient(Node):
                 return True
             else:
                 error_code = result.result.error_code.val if result else "Unknown"
-                self.get_logger().error(f"Movement failed with error code: {error_code}")
+                self._log_error(f"Movement failed with error code: {error_code}")
                 return False
                 
         except Exception as e:
-            self.get_logger().error(f"Error in move_to_joint_configuration: {str(e)}")
+            self._log_error(f"Error in move_to_joint_configuration: {str(e)}")
             return False
 
     def move_to_pose(self, target_pose, target_link="link_6", velocity_scaling=0.3, acceleration_scaling=0.3):
@@ -283,9 +307,9 @@ class MoveItActionClient(Node):
             quat = [orient.x, orient.y, orient.z, orient.w]
             roll, pitch, yaw = euler_from_quaternion(quat)
             
-            self.get_logger().info(f"Target pose ({target_link}):")
-            self.get_logger().info(f"  Position: x={pos.x:.3f}, y={pos.y:.3f}, z={pos.z:.3f} m")
-            self.get_logger().info(f"  Orientation (RPY): roll={roll:.3f} ({np.degrees(roll):.1f}°), "
+            self._log_info(f"Target pose ({target_link}):")
+            self._log_info(f"  Position: x={pos.x:.3f}, y={pos.y:.3f}, z={pos.z:.3f} m")
+            self._log_info(f"  Orientation (RPY): roll={roll:.3f} ({np.degrees(roll):.1f}°), "
                                  f"pitch={pitch:.3f} ({np.degrees(pitch):.1f}°), "
                                  f"yaw={yaw:.3f} ({np.degrees(yaw):.1f}°)")
             
@@ -364,7 +388,7 @@ class MoveItActionClient(Node):
             goal_msg.planning_options = planning_options
             
             # Send the goal
-            self.get_logger().info("Sending pose goal to move_group...")
+            self._log_info("Sending pose goal to move_group...")
             future = self._action_client.send_goal_async(goal_msg)
             
             # Wait for the goal to be accepted
@@ -372,10 +396,10 @@ class MoveItActionClient(Node):
             
             goal_handle = future.result()
             if not goal_handle.accepted:
-                self.get_logger().error("Goal rejected!")
+                self._log_error("Goal rejected!")
                 return False
             
-            self.get_logger().info("Goal accepted, waiting for result...")
+            self._log_info("Goal accepted, waiting for result...")
             
             # Wait for the result
             result_future = goal_handle.get_result_async()
@@ -383,7 +407,7 @@ class MoveItActionClient(Node):
             
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
-                self.get_logger().info("Movement completed successfully!")
+                self._log_info("Movement completed successfully!")
                 
                 # Wait for execution to complete and update state
                 self.wait_for_execution_complete()
@@ -394,11 +418,11 @@ class MoveItActionClient(Node):
                 return True
             else:
                 error_code = result.result.error_code.val if result else "Unknown"
-                self.get_logger().error(f"Movement failed with error code: {error_code}")
+                self._log_error(f"Movement failed with error code: {error_code}")
                 return False
                 
         except Exception as e:
-            self.get_logger().error(f"Error in move_to_pose: {str(e)}")
+            self._log_error(f"Error in move_to_pose: {str(e)}")
             return False
 
 def main(args=None):
@@ -449,27 +473,27 @@ def main(args=None):
         ]
         
         for i, movement in enumerate(movements):
-            moveit_client.get_logger().info(f"--- Movement {i+1} ---")
+            moveit_client._log_info(f"--- Movement {i+1} ---")
             
             if movement['type'] == 'joint':
                 success = moveit_client.move_to_joint_configuration(movement['values'])
                 if success:
-                    moveit_client.get_logger().info(f"Movement {i+1} completed successfully!")
+                    moveit_client._log_info(f"Movement {i+1} completed successfully!")
                 else:
-                    moveit_client.get_logger().error(f"Movement {i+1} failed!")
+                    moveit_client._log_error(f"Movement {i+1} failed!")
                     break
             
             # Wait between movements
             if i < len(movements) - 1:
-                moveit_client.get_logger().info("Waiting before next movement...")
+                moveit_client._log_info("Waiting before next movement...")
                 time.sleep(2.0)
         
         # Keep the node alive
-        moveit_client.get_logger().info("All movements completed. Press Ctrl+C to exit.")
+        moveit_client._log_info("All movements completed. Press Ctrl+C to exit.")
         rclpy.spin(moveit_client)
         
     except KeyboardInterrupt:
-        moveit_client.get_logger().info("Shutting down...")
+        moveit_client._log_info("Shutting down...")
     
     moveit_client.destroy_node()
     rclpy.shutdown()

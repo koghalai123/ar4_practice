@@ -199,7 +199,7 @@ class CalibrationConvergenceSimulator:
         #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
         
         #pos,ori = robot.get_current_pose()
-        joint_positions_commanded = robot.get_ik(position, orientation, frame)
+        joint_positions_commanded = robot.get_ik(position=position, orientation_euler=orientation, frame_id=frame)
         
         #joint_lengths = self.joint_lengths_nominal
         #XOffsets = self.XNominal

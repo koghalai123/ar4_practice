@@ -3,6 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from moveit_action_client import MoveItActionClient
+from moveit_msgs.srv import GetPositionIK
 from geometry_msgs.msg import PoseStamped, Point, Quaternion
 from tf_transformations import quaternion_from_euler, euler_from_quaternion, euler_matrix, euler_from_matrix
 import numpy as np
@@ -18,7 +19,12 @@ class AR4Robot:
     def __init__(self):
         """Initialize the AR4 Robot interface"""
         rclpy.init()
-        self.moveit_client = MoveItActionClient()
+        
+        # Logging control (enabled by default)
+        self.logging_enabled = True
+        
+        # Create MoveIt client with logging setting
+        self.moveit_client = MoveItActionClient(enable_logging=self.logging_enabled)
         
         # Default scaling factors for safety
         self.default_velocity_scaling = 0.3
@@ -41,6 +47,19 @@ class AR4Robot:
             "y": -0.00699888,
             "z": 0.47477099
         }
+    
+    def _log_info(self, message):
+        """Centralized logging method that respects the logging_enabled setting"""
+        if self.logging_enabled:
+            self.moveit_client.get_logger().info(message)
+    
+    def _log_warn(self, message):
+        """Centralized warning logging method (always outputs)"""
+        self.moveit_client.get_logger().warn(message)
+    
+    def _log_error(self, message):
+        """Centralized error logging method (always outputs)"""
+        self.moveit_client.get_logger().error(message)
         
     def from_preferred_frame(self, position, euler_angles, old_reference_frame="base_link", new_reference_frame="base_link"):
         """Convert from preferred reference frame to MoveIt internal frame"""
@@ -118,22 +137,22 @@ class AR4Robot:
         # Print joint state
         joints = self.get_current_joint_state()
         if joints:
-            self.moveit_client.get_logger().info(f"{prefix} - Joint positions:")
+            self._log_info(f"{prefix} - Joint positions:")
             for joint, value in joints.items():
-                self.moveit_client.get_logger().info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
+                self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
         else:
-            self.moveit_client.get_logger().warn("No joint state available")
+            self._log_warn("No joint state available")
             
         # Print end effector pose in preferred frame
         position, orientation = self.get_current_pose_preferred_frame(reference_frame)
         if position is not None and orientation is not None:
-            self.moveit_client.get_logger().info(f"{prefix} - End effector pose in preferred frame ({reference_frame}):")
-            self.moveit_client.get_logger().info(f"  Position: x={position[0]:.3f}, y={position[1]:.3f}, z={position[2]:.3f} m")
-            self.moveit_client.get_logger().info(f"  Orientation (RPY): roll={orientation[0]:.3f} ({np.degrees(orientation[0]):.1f}°), "
+            self._log_info(f"{prefix} - End effector pose in preferred frame ({reference_frame}):")
+            self._log_info(f"  Position: x={position[0]:.3f}, y={position[1]:.3f}, z={position[2]:.3f} m")
+            self._log_info(f"  Orientation (RPY): roll={orientation[0]:.3f} ({np.degrees(orientation[0]):.1f}°), "
                                  f"pitch={orientation[1]:.3f} ({np.degrees(orientation[1]):.1f}°), "
                                  f"yaw={orientation[2]:.3f} ({np.degrees(orientation[2]):.1f}°)")
         else:
-            self.moveit_client.get_logger().warn("Could not get end effector pose in preferred frame")
+            self._log_warn("Could not get end effector pose in preferred frame")
     
     def wait_for_movement_complete(self, timeout=10.0):
         """
@@ -141,7 +160,7 @@ class AR4Robot:
         :param timeout: Maximum time to wait in seconds
         """
         start_time = time.time()
-        self.moveit_client.get_logger().info("Waiting for movement to complete...")
+        self._log_info("Waiting for movement to complete...")
         
         while time.time() - start_time < timeout:
             # Check if we have current joint state with velocities
@@ -152,7 +171,7 @@ class AR4Robot:
                 if hasattr(joint_state, 'velocity') and len(joint_state.velocity) > 0:
                     max_velocity = max(abs(v) for v in joint_state.velocity)
                     if max_velocity < 0.01:  # Velocity threshold for "stopped"
-                        self.moveit_client.get_logger().info("Movement completed (velocities near zero)")
+                        self._log_info("Movement completed (velocities near zero)")
                         return True
                 
                 # If no velocities available, use position change detection
@@ -173,14 +192,14 @@ class AR4Robot:
                                        for i in range(min(len(new_positions), len(current_positions))))
                         
                         if max_change < 0.001:  # Position change threshold
-                            self.moveit_client.get_logger().info("Movement completed (positions stabilized)")
+                            self._log_info("Movement completed (positions stabilized)")
                             return True
             
             # Spin once to update joint states
             rclpy.spin_once(self.moveit_client, timeout_sec=0.1)
             time.sleep(0.1)
         
-        self.moveit_client.get_logger().warn(f"Movement completion timeout after {timeout} seconds")
+        self._log_warn(f"Movement completion timeout after {timeout} seconds")
         return False
     
     def move_to_joint_positions(self, joint_positions, velocity_scaling=None, acceleration_scaling=None):
@@ -195,7 +214,7 @@ class AR4Robot:
         if acceleration_scaling is None:
             acceleration_scaling = self.default_acceleration_scaling
             
-        self.moveit_client.get_logger().info("=== Moving to Joint Positions ===")
+        self._log_info("=== Moving to Joint Positions ===")
         self.print_current_state("Before movement")
         
         success = self.moveit_client.move_to_joint_configuration(
@@ -260,11 +279,11 @@ class AR4Robot:
         target_pose.pose.orientation.z = float(quat[2])
         target_pose.pose.orientation.w = float(quat[3])
         
-        self.moveit_client.get_logger().info("=== Moving to Pose (Preferred Frame) ===")
-        self.moveit_client.get_logger().info(f"Target position (preferred frame): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
-        self.moveit_client.get_logger().info(f"Target orientation (preferred frame RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
-        self.moveit_client.get_logger().info(f"Converted to MoveIt position: [{moveit_position[0]:.3f}, {moveit_position[1]:.3f}, {moveit_position[2]:.3f}]")
-        self.moveit_client.get_logger().info(f"Converted to MoveIt orientation: [{moveit_orientation[0]:.3f}, {moveit_orientation[1]:.3f}, {moveit_orientation[2]:.3f}] rad")
+        self._log_info("=== Moving to Pose (Preferred Frame) ===")
+        self._log_info(f"Target position (preferred frame): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
+        self._log_info(f"Target orientation (preferred frame RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
+        self._log_info(f"Converted to MoveIt position: [{moveit_position[0]:.3f}, {moveit_position[1]:.3f}, {moveit_position[2]:.3f}]")
+        self._log_info(f"Converted to MoveIt orientation: [{moveit_orientation[0]:.3f}, {moveit_orientation[1]:.3f}, {moveit_orientation[2]:.3f}] rad")
         
         self.print_current_state("Before movement")
         
@@ -323,10 +342,10 @@ class AR4Robot:
             # Default orientation (identity)
             target_pose.pose.orientation.w = 1.0
         
-        self.moveit_client.get_logger().info("=== Moving to Pose (MoveIt Frame) ===")
-        self.moveit_client.get_logger().info(f"Target position: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
+        self._log_info("=== Moving to Pose (MoveIt Frame) ===")
+        self._log_info(f"Target position: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
         if orientation_euler is not None:
-            self.moveit_client.get_logger().info(f"Target orientation (RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
+            self._log_info(f"Target orientation (RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
         
         self.print_current_state("Before movement")
         
@@ -351,28 +370,257 @@ class AR4Robot:
             'joint_5': 0.0,
             'joint_6': 0.0
         }
-        self.moveit_client.get_logger().info("=== Moving to Home Position ===")
+        self._log_info("=== Moving to Home Position ===")
         return self.move_to_joint_positions(home_position)
     
     def set_velocity_scaling(self, scaling):
         """Set default velocity scaling factor (0.0 to 1.0)"""
         self.default_velocity_scaling = max(0.0, min(1.0, scaling))
-        self.moveit_client.get_logger().info(f"Velocity scaling set to: {self.default_velocity_scaling}")
+        self._log_info(f"Velocity scaling set to: {self.default_velocity_scaling}")
     
     def set_acceleration_scaling(self, scaling):
         """Set default acceleration scaling factor (0.0 to 1.0)"""
         self.default_acceleration_scaling = max(0.0, min(1.0, scaling))
-        self.moveit_client.get_logger().info(f"Acceleration scaling set to: {self.default_acceleration_scaling}")
+        self._log_info(f"Acceleration scaling set to: {self.default_acceleration_scaling}")
+    
+    def enable_logging(self):
+        """Enable informational logging"""
+        self.logging_enabled = True
+        self.moveit_client.logging_enabled = True
+        self.moveit_client.get_logger().info("Logging enabled")
+    
+    def disable_logging(self):
+        """Disable informational logging (warnings and errors still shown)"""
+        if self.logging_enabled:
+            self.moveit_client.get_logger().info("Logging disabled")
+        self.logging_enabled = False
+        self.moveit_client.logging_enabled = False
+    
+    def toggle_logging(self):
+        """Toggle logging on/off"""
+        if self.logging_enabled:
+            self.disable_logging()
+        else:
+            self.enable_logging()
+    
+    def is_logging_enabled(self):
+        """Check if logging is enabled"""
+        return self.logging_enabled
     
     def wait(self, seconds):
         """Wait for specified number of seconds (kept for manual delays if needed)"""
-        self.moveit_client.get_logger().info(f"Waiting {seconds} seconds...")
+        self._log_info(f"Waiting {seconds} seconds...")
         time.sleep(seconds)
     
     def shutdown(self):
         """Shutdown the robot interface"""
         self.moveit_client.destroy_node()
         rclpy.shutdown()
+    
+    def get_ik(self, position, orientation_euler=None, orientation_quat=None, 
+               frame_id="base_link", target_link="link_6", avoid_collisions=True):
+        """
+        Calculate inverse kinematics for a specific pose.
+        
+        Parameters:
+        - position: [x, y, z] position in meters
+        - orientation_euler: [roll, pitch, yaw] in radians (optional)
+        - orientation_quat: [x, y, z, w] quaternion (optional)
+        - frame_id: Reference frame for the pose
+        - target_link: Target link name
+        - avoid_collisions: Whether to avoid collisions during IK calculation
+        
+        Returns:
+        - Dictionary mapping joint names to angles (in radians) if solution found
+        - None if no IK solution found
+        """
+        # Determine quaternion
+        if orientation_quat is not None:
+            quat_xyzw = orientation_quat
+        elif orientation_euler is not None:
+            quat = quaternion_from_euler(
+                float(orientation_euler[0]), 
+                float(orientation_euler[1]), 
+                float(orientation_euler[2])
+            )
+            quat_xyzw = np.array([float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])])
+        else:
+            # Default orientation (identity)
+            quat_xyzw = np.array([0.0, 0.0, 0.0, 1.0])
+        
+        self._log_info("=== Calculating IK for Pose ===")
+        self._log_info(f"Target position: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
+        if orientation_euler is not None:
+            self._log_info(f"Target orientation (RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
+        
+        # Call MoveIt's IK service directly
+        joint_state = self._call_ik_service(
+            position=position,
+            quat_xyzw=quat_xyzw,
+            frame_id=frame_id,
+            target_link=target_link,
+            avoid_collisions=avoid_collisions
+        )
+        
+        if joint_state is None:
+            self._log_warn("No IK solution found")
+            return None
+        
+        # Convert joint state message to dictionary
+        joint_positions = {}
+        for i, name in enumerate(joint_state.name):
+            if name in self.moveit_client.joint_names:
+                joint_positions[name] = joint_state.position[i]
+        
+        if not joint_positions:
+            self._log_warn("IK solution found but no valid joint positions")
+            return None
+        
+        self._log_info("IK solution found:")
+        for joint, value in joint_positions.items():
+            self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
+        
+        return joint_positions
+    
+    def _call_ik_service(self, position, quat_xyzw, frame_id="base_link", 
+                         target_link="link_6", avoid_collisions=True):
+        """
+        Call MoveIt's IK service directly to compute inverse kinematics.
+        
+        Parameters:
+        - position: [x, y, z] position in meters
+        - quat_xyzw: [x, y, z, w] quaternion
+        - frame_id: Reference frame for the pose
+        - target_link: Target link name
+        - avoid_collisions: Whether to avoid collisions during IK calculation
+        
+        Returns:
+        - JointState message with the solution, or None if no solution found
+        """
+        # Create IK service client if it doesn't exist
+        if not hasattr(self, '_ik_client'):
+            self._ik_client = self.moveit_client.create_client(
+                GetPositionIK, 
+                'compute_ik'
+            )
+        
+        # Wait for service to become available
+        if not self._ik_client.wait_for_service(timeout_sec=5.0):
+            self._log_error("IK service not available")
+            return None
+        
+        # Create the request
+        request = GetPositionIK.Request()
+        
+        # Set up the IK request
+        request.ik_request.group_name = "ar4_arm"
+        request.ik_request.ik_link_name = target_link
+        request.ik_request.avoid_collisions = avoid_collisions
+        request.ik_request.timeout.sec = 5
+        
+        # Set the target pose
+        request.ik_request.pose_stamped.header.frame_id = frame_id
+        request.ik_request.pose_stamped.header.stamp = self.moveit_client.get_clock().now().to_msg()
+        request.ik_request.pose_stamped.pose.position.x = float(position[0])
+        request.ik_request.pose_stamped.pose.position.y = float(position[1])
+        request.ik_request.pose_stamped.pose.position.z = float(position[2])
+        request.ik_request.pose_stamped.pose.orientation.x = float(quat_xyzw[0])
+        request.ik_request.pose_stamped.pose.orientation.y = float(quat_xyzw[1])
+        request.ik_request.pose_stamped.pose.orientation.z = float(quat_xyzw[2])
+        request.ik_request.pose_stamped.pose.orientation.w = float(quat_xyzw[3])
+        
+        # Set robot state (use current joint state as seed)
+        current_joint_state = self.get_current_joint_state()
+        if current_joint_state:
+            from sensor_msgs.msg import JointState
+            joint_state_msg = JointState()
+            joint_state_msg.header.stamp = self.moveit_client.get_clock().now().to_msg()
+            joint_state_msg.name = list(current_joint_state.keys())
+            joint_state_msg.position = list(current_joint_state.values())
+            request.ik_request.robot_state.joint_state = joint_state_msg
+        
+        # Call the service
+        try:
+            future = self._ik_client.call_async(request)
+            rclpy.spin_until_future_complete(self.moveit_client, future, timeout_sec=10.0)
+            
+            if future.result() is not None:
+                response = future.result()
+                if response.error_code.val == response.error_code.SUCCESS:
+                    return response.solution.joint_state
+                else:
+                    self._log_warn(f"IK service failed with error code: {response.error_code.val}")
+                    return None
+            else:
+                self._log_error("IK service call failed")
+                return None
+                
+        except Exception as e:
+            self._log_error(f"IK service call exception: {e}")
+            return None
+    
+    def get_ik_preferred_frame(self, position, orientation_euler, 
+                               reference_frame="base_link", target_link="link_6", 
+                               avoid_collisions=True):
+        """
+        Calculate inverse kinematics for a specific pose in preferred frame.
+        
+        Parameters:
+        - position: [x, y, z] position in preferred frame
+        - orientation_euler: [roll, pitch, yaw] in preferred frame (in radians)
+        - reference_frame: Reference frame for the pose
+        - target_link: Target link name
+        - avoid_collisions: Whether to avoid collisions during IK calculation
+        
+        Returns:
+        - Dictionary mapping joint names to angles (in radians) if solution found
+        - None if no IK solution found
+        """
+        # Convert from preferred frame to MoveIt internal frame
+        moveit_position, moveit_orientation = self.from_preferred_frame(
+            position, orientation_euler, reference_frame, "base_link"
+        )
+        
+        self._log_info(f"Converting from preferred frame: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
+        self._log_info(f"To MoveIt frame: [{moveit_position[0]:.3f}, {moveit_position[1]:.3f}, {moveit_position[2]:.3f}]")
+        
+        # Call the regular IK function with converted pose
+        return self.get_ik(
+            position=moveit_position,
+            orientation_euler=moveit_orientation,
+            frame_id="base_link",
+            target_link=target_link,
+            avoid_collisions=avoid_collisions
+        )
+    
+    def get_ik_weird_frame(self, position, orientation_euler=None, orientation_quat=None, 
+           frame_id="base_link", target_link="link_6", avoid_collisions=True):
+        """
+        Calculate inverse kinematics for a specific pose.
+        
+        Parameters:
+        - position: [x, y, z] position in meters
+        - orientation_euler: [roll, pitch, yaw] in radians (optional)
+        - orientation_quat: [x, y, z, w] quaternion (optional)
+        - frame_id: Reference frame for the pose
+        - target_link: Target link name
+        - avoid_collisions: Whether to avoid collisions during IK calculation
+        
+        Returns:
+        - Dictionary mapping joint names to angles (in radians) if solution found
+        - None if no IK solution found
+        """
+        # Call the standard get_ik function
+        return self.get_ik(
+            position=position,
+            orientation_euler=orientation_euler,
+            orientation_quat=orientation_quat,
+            frame_id=frame_id,
+            target_link=target_link,
+            avoid_collisions=avoid_collisions
+        )
+
+    
 
 def main():
     """Example usage of the AR4Robot class with movement completion detection"""

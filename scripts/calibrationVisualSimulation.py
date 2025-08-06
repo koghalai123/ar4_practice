@@ -7,7 +7,7 @@ import argparse
 from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Quaternion, Point, Pose
 from surface_publisher import SurfacePublisher
-from ar4_robot import AR4_ROBOT
+from ar4_robot_py import AR4Robot
 from calibrationConvergenceSimulation import CalibrationConvergenceSimulator
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
@@ -74,9 +74,9 @@ def camera_vector_from_pose_and_measurement(roll, pitch, yaw, distance):
 def main(args=None):
     #rclpy.init(args=args)
     frame = "end_effector_link"
-    use_joint_positions = 0
-    robot = AR4_ROBOT(use_joint_positions)
-    robot.resetErrors()
+
+    robot = AR4Robot()
+    robot.disable_logging()
     marker_publisher = SurfacePublisher()
 
     simulator = CalibrationConvergenceSimulator(n=8, numIters=5, dQMagnitude=0.0, dLMagnitude=0.0,dXMagnitude=0.0)
@@ -108,7 +108,7 @@ def main(args=None):
         # Generate individual measurements
         for i in range(simulator.n):
             counter = 0
-            robot.moveit2.motion_suceeded = False
+            motionSucceeded = False
             while counter < 10:
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
                 
@@ -127,8 +127,8 @@ def main(args=None):
                 #measuredGlobalEndEffectorPos = targetPosBelieved + calculatedVector
                 #measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(measuredGlobalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
 
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.fromMyPreferredFrame(targetPosActual, np.array([0,0,0]), old_reference_frame="base_link", new_reference_frame="base_link")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(globalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
+                targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(targetPosActual, np.array([0,0,0]), old_reference_frame="base_link", new_reference_frame="base_link")
+                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(globalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
 
                 
                 marker_publisher.publishPlane(np.array([0.146]),targetPosWeirdFrame)
@@ -145,8 +145,8 @@ def main(args=None):
                 
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll,pitch,yaw]
-                robot.move_pose(position, euler_angles,frame)
-                if robot.moveit2.motion_suceeded:
+                motionSucceeded = robot.move_to_pose_preferred_frame(position, euler_angles,frame)
+                if motionSucceeded:
                     break
                 counter += 1
 
