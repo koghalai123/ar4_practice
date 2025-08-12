@@ -15,7 +15,7 @@ Camera Mode Usage:
     )
     
     # Generate camera measurements (joint positions and measured displacements to targets)
-    joint_positions, target_displacements = sim.generate_measurement_joints_camera(target_positions_world)
+    joint_positions, target_displacements = sim.generate_measurement_joints_camera(target_position_world)
     
     # Camera mode changes only the measurement method - same 18 parameters estimated:
     # - 6 joint encoder errors (dQ)
@@ -55,27 +55,18 @@ import pandas as pd
 
 class CalibrationSimulator:
     def __init__(self, n=10, numIters=10, dQMagnitude=0.1, dLMagnitude=0.0, dXMagnitude=0.1, 
-                 camera_mode=False, camera_transform=None, target_orientation=None):
+                 camera_mode=False, camera_transform=np.array([0,0,0,0,0,0]), target_orientation=np.array([0, 0, 0]),
+                 target_position_world=np.array([0, -0.3, 0])):
         self.n=n
         self.m = 6
         self.noiseMagnitude = 0.00
         
         # Camera mode parameters
         self.camera_mode = camera_mode
-        # Fixed camera transformation from end-effector to camera (no error parameters)
-        if camera_mode and camera_transform is None:
-            # Default: camera 5cm forward, 2cm up from end-effector
-            self.camera_transform = [0.0, 0.0, 0.05, 0.0, 0.0, 0.0]  # [px, py, pz, rx, ry, rz]
-        else:
-            self.camera_transform = camera_transform or [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        
-        # Target orientation in world frame (fixed orientation that camera must measure)
-        if target_orientation is None:
-            # Default: target rotated 30 degrees about each axis
-            self.target_orientation_world = np.array([np.pi/6, np.pi/4, np.pi/3])  # [roll, pitch, yaw] in radians
-        else:
-            self.target_orientation_world = np.array(target_orientation)
-        
+        self.camera_transform = camera_transform
+        self.target_orientation_world = np.array(target_orientation)
+        self.target_position_world = target_position_world
+
         self.resetMatrices()
         
         self.dQMagnitude = dQMagnitude
@@ -88,7 +79,7 @@ class CalibrationSimulator:
         
         self.XNominal = np.zeros((6))
         self.dXMagnitude = dXMagnitude
-        self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))[0]
+        self.dX = np.concatenate([np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,3))[0],np.array([0,0,0])])
         self.XActual = self.XNominal + self.dX
         
         # No additional error parameters - only robot kinematic errors
@@ -125,30 +116,9 @@ class CalibrationSimulator:
         # Jacobian matrices have 18 parameters (robot parameters only)
         self.numJacobianTrans = np.zeros((0, 18))
         self.numJacobianRot = np.zeros((0, 18))
-        
-        # For camera mode, store both displacement and full transform measurements
-        if self.camera_mode:
-            self.target_displacements_measured = np.zeros((self.n, 3))
-            self.target_displacements_expected = np.zeros((self.n, 3))
-            # New: store full 6DOF transformations from camera to target
-            self.target_transforms_measured = np.zeros((self.n, 6))
-            self.target_transforms_expected = np.zeros((self.n, 6))
+
         
     def loadSymbolicTransforms(self):
-        '''symbolic_matrices = {}
-        
-        fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
-        for fileName in fileNameList:
-            with open(fileName, "r") as f:
-                reader = csv.reader(f)
-                header = next(reader)  # Skip header if present
-                data = [row for row in reader]
-                
-            # Convert to SymPy Matrix
-            symbolic_matrix = sp.Matrix([[sp.sympify(cell) for cell in row] for row in data])
-            # Store in dictionary with key based on file name (without .csv)
-            key = fileName.replace(".csv", "")
-            symbolic_matrices[key] = symbolic_matrix'''
         symbolic_matrices = {}
         fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
         for fileName in fileNameList:
@@ -174,24 +144,39 @@ class CalibrationSimulator:
         
         return transform
         
-    def symbolic_transform_with_ref_frames(self, xyz, euler_angles, rotation_order='XYZ'):
-        N = ReferenceFrame('N')  # World frame
+    def symbolic_transform_with_ref_frames(self, xyz, euler_angles):
+        '''N = ReferenceFrame('N')  # World frame
+        rotation_order = 'XYZ'
         B = N.orientnew('B', 'Body', euler_angles, rotation_order)
         
         R = N.dcm(B)
         
         T = eye(4)
         T[:3, :3] = R  # Transpose to get rotation from B to N
+        T[:3, 3] = xyz'''
+
+        rx_t, ry_t, rz_t = euler_angles
+        cx, cy, cz = sp.cos(rx_t), sp.cos(ry_t), sp.cos(rz_t)
+        sx, sy, sz = sp.sin(rx_t), sp.sin(ry_t), sp.sin(rz_t)
+        R_x = sp.Matrix([[1, 0, 0],
+                            [0, cx, -sx],
+                            [0, sx, cx]])
+        R_y = sp.Matrix([[cy, 0, sy],
+                            [0, 1, 0],
+                            [-sy, 0, cy]])
+        R_z = sp.Matrix([[cz, -sz, 0],
+                            [sz, cz, 0],
+                            [0, 0, 1]])
+        R_ct = R_z * R_y * R_x
+        T = sp.eye(4)
+        T[:3, :3] = R_ct
         T[:3, 3] = xyz
-        
+
         return T
 
     def setup_kinematics(self):
-        self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], self.x[3:6], rotation_order='XYZ')
+        self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], self.x[3:6])
         self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], self.XActual[3:6], rotation_order='XYZ')
-        
-        '''for i in range(1, 7):
-            key = "Joint" + str(i)'''
             
         for i in range(1, 7):
             key = "Joint" + str(i)
@@ -206,63 +191,32 @@ class CalibrationSimulator:
             self.symbolic_matrices[key] = symbolic_matrix
         #baseToWrist = sp.eye(4)
         self.originToWrist = self.originToBase*self.baseToWrist
-        # Set up transformation chain
         if self.camera_mode:
-            # Camera mode: origin -> base -> wrist -> camera -> target (imagined end effector)
-            # Fixed camera transformation (no symbolic parameters)
             px, py, pz = self.camera_transform[:3]
             rx, ry, rz = self.camera_transform[3:]
             
-            # Use get_homogeneous_transform for numerical consistency
             wrist_to_camera_numeric = self.get_homogeneous_transform([px, py, pz], [rx, ry, rz])
             self.wristToCamera = sp.Matrix(wrist_to_camera_numeric)
             
-            # Complete transformation chain to camera
             self.originToCamera = self.originToBase * self.baseToWrist * self.wristToCamera
             
-            # Create symbolic camera-to-target transformation
-            # These symbolic variables will be substituted with measured values
             self.measured_target_position = sp.symbols('tx ty tz')
             self.measured_target_orientation = sp.symbols('rx_t ry_t rz_t')
-            # Explicit intrinsic XYZ rotation (target relative to camera frame)
-            rx_t, ry_t, rz_t = self.measured_target_orientation
-            cx, cy, cz = sp.cos(rx_t), sp.cos(ry_t), sp.cos(rz_t)
-            sx, sy, sz = sp.sin(rx_t), sp.sin(ry_t), sp.sin(rz_t)
-            R_x = sp.Matrix([[1, 0, 0],
-                              [0, cx, -sx],
-                              [0, sx, cx]])
-            R_y = sp.Matrix([[cy, 0, sy],
-                              [0, 1, 0],
-                              [-sy, 0, cy]])
-            R_z = sp.Matrix([[cz, -sz, 0],
-                              [sz, cz, 0],
-                              [0, 0, 1]])
-            # IMPORTANT: SciPy R.from_euler('xyz', angles) applies extrinsic fixed-axis X then Y then Z.
-            # Matrix form: R = R_z * R_y * R_x (rightmost applied first). Change from previous R_x*R_y*R_z.
-            R_ct = R_z * R_y * R_x
-            T_ct = sp.eye(4)
-            T_ct[:3, :3] = R_ct
-            T_ct[:3, 3] = sp.Matrix(self.measured_target_position)
-            self.cameraToTarget = T_ct
-            # Complete chain
+
+            self.cameraToTarget = self.symbolic_transform_with_ref_frames(
+                self.measured_target_position, self.measured_target_orientation
+            )
             self.originToTarget = self.originToCamera * self.cameraToTarget
             
-            # Use target pose as the endpoint for Jacobian computation
-            # This represents the "imagined end effector" at the target location
             self.translation_vector = self.originToTarget[:3, 3]
             self.rotation_matrix = self.originToTarget[:3, :3]
         else:
             # Standard mode: origin -> base -> wrist
             self.translation_vector = self.originToWrist[:3, 3]
             self.rotation_matrix = self.originToWrist[:3, :3]
+            self.originToTarget = self.originToWrist
         
-        # Variable list includes only robot parameters (no target error parameters)
         vars = list(self.q) + list(self.l) + list(self.x)
-        
-        '''self.pitch = sp.asin(-self.rotation_matrix[2, 0])
-        self.roll = sp.atan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
-        self.yaw = sp.atan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
-        self.euler_angles = sp.Matrix([self.roll, self.pitch, self.yaw])'''
         
         self.jacobian_translation = self.translation_vector.jacobian(vars)
         
@@ -294,34 +248,23 @@ class CalibrationSimulator:
             }
             
             # Add camera-to-target pose substitutions if provided
-            if camera_to_target is not None:
-                subs_dict.update({
-                    self.measured_target_position[0]: camera_to_target[0],  # tx
-                    self.measured_target_position[1]: camera_to_target[1],  # ty
-                    self.measured_target_position[2]: camera_to_target[2],  # tz
-                    self.measured_target_orientation[0]: camera_to_target[3],  # rx_t
-                    self.measured_target_orientation[1]: camera_to_target[4],  # ry_t
-                    self.measured_target_orientation[2]: camera_to_target[5],  # rz_t
-                })
-            else:
-                # Use zero camera-to-target transform (camera pose)
-                subs_dict.update({
-                    self.measured_target_position[0]: 0.0,
-                    self.measured_target_position[1]: 0.0,
-                    self.measured_target_position[2]: 0.0,
-                    self.measured_target_orientation[0]: 0.0,
-                    self.measured_target_orientation[1]: 0.0,
-                    self.measured_target_orientation[2]: 0.0,
-                })
+            subs_dict.update({
+                self.measured_target_position[0]: camera_to_target[0],  # tx
+                self.measured_target_position[1]: camera_to_target[1],  # ty
+                self.measured_target_position[2]: camera_to_target[2],  # tz
+                self.measured_target_orientation[0]: camera_to_target[3],  # rx_t
+                self.measured_target_orientation[1]: camera_to_target[4],  # ry_t
+                self.measured_target_orientation[2]: camera_to_target[5],  # rz_t
+            })
             #self.originToTarget
             M_num_actual = self.originToTarget.subs(subs_dict)
         else:
-            # Standard mode: use origin to wrist transformation
-            M_num_actual = self.originToWrist.subs({
+            subs_dict = {
                 **{q[k]: joint_positions[k] for k in range(6)},
                 **{l[k]: joint_lengths[k] for k in range(6)},
                 **{x[k]: XOffsets[k] for k in range(6)}
-            })
+            }
+        M_num_actual = self.originToTarget.subs(subs_dict)
         
         '''M_num_inverse = wristToBase.subs({
         **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
@@ -341,20 +284,10 @@ class CalibrationSimulator:
             pose = np.random.uniform(-0.1, 0.1, (1, 6))[0]
         position = pose[:3]
         orientation =  pose[3:6]
-        #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
         
         #pos,ori = robot.get_current_pose()
         joint_positions_commanded = robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
-        
-        #joint_lengths = self.joint_lengths_nominal
-        #XOffsets = self.XNominal
-        
-        #
-        #pose_fk = self.get_fk_calibration_model(np.array([0,0,0,0,0,0]), joint_lengths, XOffsets)
-        #global_position, global_orientation = robot.toMyPreferredFrame(pose_fk[:3], pose_fk[3:6], reference_frame="base_link")
-        #fk_result = robot.moveit2.compute_fk(
-        #    joint_state=np.array([0,0,0,0,0,0]).tolist(),  # Convert NumPy array to list
-        #)
+
         if self.camera_mode:
             pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_commanded=joint_positions_commanded, calibrate=calibrate)
         else:
@@ -375,22 +308,12 @@ class CalibrationSimulator:
             joint_positions_actual: Actual joint positions
             joint_positions_commanded: Commanded joint positions
         """
-        if not self.camera_mode:
-            raise ValueError("Camera mode must be enabled to use this method")
-        
         # Generate standard joint measurements first
         pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded=joint_positions_commanded, calibrate=calibrate)
         
-        # Set up target position in world frame
-        if self.target_positions_world is None:
-            # Generate default target position in world frame
-            target_positions_world = np.array([0.0, -0.3, 0.0])
-        else:
-            target_positions_world = self.target_positions_world
+        target_position_world = self.target_position_world
         target_orientation_world = self.target_orientation_world
-        # For camera measurements, we calculate the transformation from camera to target
-        # This gives us both position and orientation of the target relative to the camera
-        
+
         # === ACTUAL MEASUREMENT (with robot errors) ===
         # Get actual camera pose in world frame (with robot errors)
         joint_lengths = self.joint_lengths_actual
@@ -398,7 +321,8 @@ class CalibrationSimulator:
         camera_pose_actual = self.get_fk_calibration_model(
             joint_positions=joint_positions_actual, 
             joint_lengths=joint_lengths, 
-            XOffsets=XOffsets
+            XOffsets=XOffsets,
+            camera_to_target = np.zeros(6)
         )
         camera_position_actual = camera_pose_actual[:3]
         camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
@@ -407,18 +331,15 @@ class CalibrationSimulator:
         T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
         T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
         
-        target_homogeneous = np.append(target_positions_world, 1)
+        target_homogeneous = np.append(target_position_world, 1)
         target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
         target_position_camera_actual = target_in_camera_actual[:3]
-        # Calculate target orientation relative to camera frame
-        # Target's rotation matrix in world frame
+
         R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
-        # Transform target orientation from world to camera frame
-        # R_target_camera = R_camera_world^T @ R_target_world
         R_target_camera_actual = camera_rotation_actual.T @ R_target_world
         target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
         camera_to_target_actual = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
-        
+        self.camera_to_target_actual = camera_to_target_actual
         # === COMMANDED/EXPECTED MEASUREMENT (with nominal parameters) ===
         # Get commanded camera pose in world frame (with nominal parameters)
         joint_lengths_commanded = self.joint_lengths_nominal
@@ -426,7 +347,8 @@ class CalibrationSimulator:
         camera_pose_commanded = self.get_fk_calibration_model(
             joint_positions=joint_positions_commanded, 
             joint_lengths=joint_lengths_commanded, 
-            XOffsets=XOffsets_commanded
+            XOffsets=XOffsets_commanded,
+            camera_to_target = np.zeros(6)
         )
         camera_position_commanded = camera_pose_commanded[:3]
         camera_rotation_commanded = R.from_euler('xyz', camera_pose_commanded[3:6]).as_matrix()
@@ -445,7 +367,7 @@ class CalibrationSimulator:
         R_target_camera_commanded = camera_rotation_commanded.T @ R_target_world
         target_orientation_camera_commanded = R.from_matrix(R_target_camera_commanded).as_euler('xyz')
         camera_to_target_commanded = np.concatenate([target_position_camera_commanded, target_orientation_camera_commanded])
-        
+        #self.camera_to_target_commanded = camera_to_target_commanded
         
         
         joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
@@ -453,9 +375,12 @@ class CalibrationSimulator:
         joint_positions_est = joint_positions_commanded - np.sum(self.dQMat, axis=0)
 
         # Get estimated target pose using current parameter estimates and measured camera-to-target
-        worldToTargetCalculated = self.get_fk_calibration_model(joint_positions_est, joint_lengths_est, XOffsets_est, camera_to_target=camera_to_target_actual)
+        worldToTargetCalculated = self.get_fk_calibration_model(joint_positions = joint_positions_est,
+                                                                 joint_lengths = joint_lengths_est,
+                                                                 XOffsets = XOffsets_est,
+                                                                 camera_to_target = camera_to_target_actual)
         # Only position affected by base translation error; orientation should match target_orientation_world exactly
-        worldToTargetActual = np.concatenate([target_positions_world - self.dX[:3], target_orientation_world])
+        worldToTargetActual = np.concatenate([target_position_world - self.dX[:3], target_orientation_world])
         self.targetArrayActual[self.current_sample][:] = worldToTargetActual
         self.targetArrayCommanded[self.current_sample][:] = worldToTargetCalculated
 
@@ -472,7 +397,10 @@ class CalibrationSimulator:
             
         joint_lengths_commanded = self.joint_lengths_nominal
         XOffsets_commanded = self.XNominal
-        pose_commanded = self.get_fk_calibration_model(joint_positions_commanded, joint_lengths_commanded, XOffsets_commanded)
+        pose_commanded = self.get_fk_calibration_model(joint_positions=joint_positions_commanded, 
+                                                       joint_lengths=joint_lengths_commanded,
+                                                       XOffsets=XOffsets_commanded,
+                                                       camera_to_target=np.zeros(6))
         
         self.joint_positions_commanded[self.current_sample][:] = joint_positions_commanded
         
@@ -481,7 +409,10 @@ class CalibrationSimulator:
         joint_lengths = self.joint_lengths_actual
         XOffsets = self.XActual.flatten()
         joint_positions_actual = joint_positions_commanded + self.dQ
-        pose_actual = self.get_fk_calibration_model(joint_positions_actual, joint_lengths, XOffsets)
+        pose_actual = self.get_fk_calibration_model(joint_positions=joint_positions_actual, 
+                                                    joint_lengths=joint_lengths, 
+                                                    XOffsets=XOffsets,
+                                                    camera_to_target=np.zeros(6))
                 
         if calibrate:
             pose_commanded = pose_commanded + np.sum(self.dXMat, axis=0)
@@ -496,12 +427,7 @@ class CalibrationSimulator:
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
     
     def compute_jacobians(self, joint_angles, camera_to_target_measured=None):
-        """Compute Jacobians for all measurements in current iteration
-        
-        Args:
-            joint_angles: Joint angles for the current measurement
-            camera_to_target_measured: 6DOF camera-to-target pose [px, py, pz, rx, ry, rz]
-        """
+
         l = sp.symbols('l1:7')
         x = sp.symbols('x1:7')
         q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
@@ -525,7 +451,7 @@ class CalibrationSimulator:
         }
         
         # For camera mode, also substitute the measured camera-to-target pose
-        if self.camera_mode and camera_to_target_measured is not None:
+        if self.camera_mode:
             # Substitute measured target position and orientation
             subs_dict.update({
                 self.measured_target_position[0]: camera_to_target_measured[0],  # tx
@@ -534,16 +460,6 @@ class CalibrationSimulator:
                 self.measured_target_orientation[0]: camera_to_target_measured[3],  # rx_t
                 self.measured_target_orientation[1]: camera_to_target_measured[4],  # ry_t
                 self.measured_target_orientation[2]: camera_to_target_measured[5],  # rz_t
-            })
-        elif self.camera_mode:
-            # Use zero camera-to-target transform as default
-            subs_dict.update({
-                self.measured_target_position[0]: 0.0,
-                self.measured_target_position[1]: 0.0,
-                self.measured_target_position[2]: 0.0,
-                self.measured_target_orientation[0]: 0.0,
-                self.measured_target_orientation[1]: 0.0,
-                self.measured_target_orientation[2]: 0.0,
             })
         
         partialsTrans = self.jacobian_translation.subs(subs_dict)
@@ -612,12 +528,7 @@ class CalibrationSimulator:
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
         translation_weight = 1.0  # Weight for translational errors
-        
-        # Use rotational information when available (camera mode with full transforms)
-        if self.camera_mode:
-            rotation_weight = 0.1     # Include rotational errors for camera mode
-        else:
-            rotation_weight = 0.0     # Standard mode - rotation often less reliable
+        rotation_weight = 0.0     
         
         # Scale translational and rotational differences
         scaled_translation_differences = translation_weight * translationDifferences.flatten()
@@ -720,10 +631,9 @@ def main(args=None):
     target_orientation_euler = np.array([0, 0, 0])  # [roll, pitch, yaw] in radians
 
     # Create simulator with target orientation
-    simulator = CalibrationSimulator(n=8, numIters=10, camera_mode=False, dQMagnitude=0.01,
+    simulator = CalibrationSimulator(n=8, numIters=10, camera_mode=True, dQMagnitude=0.1,
                                       dLMagnitude=0.0, dXMagnitude=0.0, 
                                      target_orientation=target_orientation_euler)
-    simulator.target_positions_world = np.array([0.0, -0.3, 0])
 
     
     print(f"Target orientation (Euler): roll={np.degrees(target_orientation_euler[0]):.1f}°, "
@@ -742,12 +652,16 @@ def main(args=None):
             #poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_joints(calibrate=True)
             simulator.generate_measurement_pose(robot = robot, pose = None, calibrate=True, frame = "end_effector_link")
             
-
-            numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
-                simulator.joint_positions_commanded[simulator.current_sample]
-            )
-            
-            simulator.current_sample += 1  
+            if simulator.camera_mode:
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample],
+                    camera_to_target_measured=simulator.camera_to_target_actual
+                )
+            else:
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample],
+                )
+            simulator.current_sample += 1
             print(f"Measurement {i}: Generated")
 
         
