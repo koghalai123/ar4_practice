@@ -159,7 +159,8 @@ class CalibrationConvergenceSimulator:
         self.originToWrist = self.originToBase*self.baseToWrist
         
         if self.camera_mode:
-
+            # In camera mode, we want Jacobians of world target pose w.r.t. robot parameters
+            # Keep the original formulation but with corrected signs
             self.measured_target_position = self.camera_measurements[:3]
             self.measured_target_orientation = self.camera_measurements[3:]
 
@@ -340,36 +341,28 @@ class CalibrationConvergenceSimulator:
         R_target_camera_commanded = camera_rotation_commanded.T @ R_target_world
         target_orientation_camera_commanded = R.from_matrix(R_target_camera_commanded).as_euler('xyz')
         camera_to_target_commanded = np.concatenate([target_position_camera_commanded, target_orientation_camera_commanded])
-        self.camera_to_target_commanded = camera_to_target_commanded
+        #self.camera_to_target_commanded = camera_to_target_commanded
         
         
-        joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
-        XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
-        joint_positions_est = joint_positions_commanded - np.sum(self.dQMat, axis=0)
+        # In camera mode, the sign correction in Jacobians means we need to flip parameter application
+        if self.camera_mode:
+            joint_lengths_est = self.joint_lengths_nominal - np.sum(self.dLMat, axis=0)
+            XOffsets_est = self.XNominal - np.sum(self.dXMat, axis=0)
+            joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
+        else:
+            joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+            XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
+            joint_positions_est = joint_positions_commanded - np.sum(self.dQMat, axis=0)
 
-        # In camera mode, compare predicted vs actual camera-to-target measurements
-        # Get estimated camera pose using current parameter estimates
-        camera_pose_est = self.get_fk_calibration_model(joint_positions = joint_positions_est,
-                                                         joint_lengths = joint_lengths_est,
-                                                         XOffsets = XOffsets_est,
-                                                         camera_to_target = np.zeros(6))
-        camera_position_est = camera_pose_est[:3]
-        camera_rotation_est = R.from_euler('xyz', camera_pose_est[3:6]).as_matrix()
-        
-        # Transform target from world to camera frame (predicted measurement)
-        T_world_to_camera_est = np.eye(4)
-        T_world_to_camera_est[:3, :3] = camera_rotation_est.T
-        T_world_to_camera_est[:3, 3] = -camera_rotation_est.T @ camera_position_est
-        
-        target_in_camera_est = T_world_to_camera_est @ target_homogeneous
-        target_position_camera_est = target_in_camera_est[:3]
-        R_target_camera_est = camera_rotation_est.T @ R_target_world
-        target_orientation_camera_est = R.from_matrix(R_target_camera_est).as_euler('xyz')
-        camera_to_target_est = np.concatenate([target_position_camera_est, target_orientation_camera_est])
-        
-        # Store measurements in camera-to-target space (not world coordinates)
-        self.targetPoseExpected[self.current_sample][:] = camera_to_target_est
-        self.targetPoseMeasured[self.current_sample][:] = camera_to_target_actual
+        # Get estimated target pose using current parameter estimates and measured camera-to-target
+        worldToTargetMeasured = self.get_fk_calibration_model(joint_positions = joint_positions_est,
+                                                                 joint_lengths = joint_lengths_est,
+                                                                 XOffsets = XOffsets_est,
+                                                                 camera_to_target = camera_to_target_actual)
+        # True target position in world frame (ground truth)
+        worldToTargetActual = np.concatenate([target_position_world, target_orientation_world])
+        self.targetPoseExpected[self.current_sample][:] = worldToTargetActual
+        self.targetPoseMeasured[self.current_sample][:] = worldToTargetMeasured
 
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
 
@@ -428,8 +421,8 @@ class CalibrationConvergenceSimulator:
         # noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (num_measurements, 6))
         # Use only the relevant subset of commanded joint positions
         #joint_positions = self.joint_positions_commanded[:num_measurements] #+ noise
-        joint_lengths = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
-        XOffsets = self.XNominal + np.sum(self.dXMat, axis=0)
+        joint_lengths = self.joint_lengths_nominal  # Use nominal values for Jacobian linearization
+        XOffsets = self.XNominal  # Use nominal values for Jacobian linearization
         '''for i in range(num_measurements):
             XOffsets = self.XNominal + np.sum(self.dXMat, axis=0)
             partialsTrans = self.jacobian_translation.subs({
@@ -459,6 +452,12 @@ class CalibrationConvergenceSimulator:
             }
         partialsTrans = self.jacobian_translation.subs(subs_dict)   
         partialsRot = self.jacobian_rotation.subs(subs_dict)
+        
+        # In camera mode, flip the sign of Jacobians due to inverse measurement relationship
+        if self.camera_mode:
+            partialsTrans = -partialsTrans
+            partialsRot = -partialsRot
+            
         i = 0
         numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
         numJacobianRot[rotCount*i:rotCount*i+rotCount,:] = np.array(partialsRot).astype(np.float64)
@@ -554,9 +553,6 @@ class CalibrationConvergenceSimulator:
         errorEstimates = self.compute_calibration_parameters(
             translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot)
             
-        # Extract parameter updates
-
-        
         dQEst = errorEstimates[0:6]
         self.dQMat[j, :] = dQEst
         
@@ -641,10 +637,8 @@ def main(args=None):
             
             
             if simulator.camera_mode:
-                    # For camera mode, we need Jacobians of predicted camera-to-target measurement
-                    # Use zero camera_to_target for Jacobian computation (we're computing derivatives of the camera pose)
                     numJacobianTrans, numJacobianRot = simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample], 
-                                                                    camera_to_target=np.zeros(6))
+                                                                    camera_to_target=simulator.camera_to_target_actual)
             else:
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample])
             simulator.current_sample += 1  
