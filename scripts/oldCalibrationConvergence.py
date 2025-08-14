@@ -132,6 +132,25 @@ class CalibrationConvergenceSimulator:
         return T
         
     def setup_kinematics(self):
+        """Setup symbolic kinematic chain and measurement model
+        
+        Unified measurement approach for both standard and camera modes:
+        
+        Standard Mode:
+        - Jacobian: ∂(robot_end_effector_pose)/∂(parameters)
+        - Expected: FK(commanded_joints + estimated_corrections, nominal_lengths + estimated_corrections, nominal_offsets + estimated_corrections)
+        - Actual: FK(commanded_joints + true_errors, true_lengths, true_offsets)
+        - Error: actual - expected
+        
+        Camera Mode:
+        - Jacobian: ∂(target_pose_in_world)/∂(parameters) 
+        - Expected: FK_world_to_target(commanded_joints + estimated_corrections, nominal_lengths + estimated_corrections, nominal_offsets + estimated_corrections, measured_camera_to_target)
+        - Actual: true_target_pose_in_world (ground truth)
+        - Error: actual - expected
+        
+        Both modes use the same least squares formulation: find parameter corrections that minimize (actual - expected)
+        No sign corrections needed because measurement directions are consistent.
+        """
         
         self.l = sp.symbols('l1:7')
         self.x = sp.symbols('x1:7')
@@ -344,25 +363,24 @@ class CalibrationConvergenceSimulator:
         #self.camera_to_target_commanded = camera_to_target_commanded
         
         
-        # In camera mode, the sign correction in Jacobians means we need to flip parameter application
-        if self.camera_mode:
-            joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
-            XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
-            joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
-        else:
-            joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
-            XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
-            joint_positions_est = joint_positions_commanded - np.sum(self.dQMat, axis=0)
+        # Use consistent parameter application for both modes
+        joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+        XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
+        joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
 
-        # Get estimated target pose using current parameter estimates and measured camera-to-target
-        worldToTargetMeasured = self.get_fk_calibration_model(joint_positions = joint_positions_est,
+        # In camera mode: compute expected target pose with estimated parameters
+        # This represents what we EXPECT to measure given our current parameter estimates
+        worldToTargetExpected = self.get_fk_calibration_model(joint_positions = joint_positions_est,
                                                                  joint_lengths = joint_lengths_est,
                                                                  XOffsets = XOffsets_est,
                                                                  camera_to_target = camera_to_target_actual)
-        # True target position in world frame (ground truth)
+        
+        # The actual target pose is the known ground truth
         worldToTargetActual = np.concatenate([target_position_world, target_orientation_world])
-        self.targetPoseExpected[self.current_sample][:] = worldToTargetActual
-        self.targetPoseMeasured[self.current_sample][:] = worldToTargetMeasured
+        
+        # Store measurements: expected vs actual (consistent with standard mode direction)
+        self.targetPoseExpected[self.current_sample][:] = worldToTargetExpected
+        self.targetPoseMeasured[self.current_sample][:] = worldToTargetActual
 
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
 
@@ -383,20 +401,23 @@ class CalibrationConvergenceSimulator:
         
         
         if calibrate:
-            joint_positions_commanded = joint_positions_commanded - np.sum(self.dQMat, axis=0)
+            # Apply current parameter estimates to get expected measurement
+            joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+            XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
+            joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
+            pose_commanded = self.get_fk_calibration_model(joint_positions_est, joint_lengths_est, XOffsets_est)
+        
         joint_lengths = self.joint_lengths_actual
         XOffsets = self.XActual.flatten()
         joint_positions_actual = joint_positions_commanded + self.dQ
         pose_actual = self.get_fk_calibration_model(joint_positions_actual, joint_lengths, XOffsets)
-                
-        if calibrate:
-            pose_commanded = pose_commanded + np.sum(self.dXMat, axis=0)
 
 
         self.poseArrayActual[self.current_sample][:] = pose_actual
         self.joint_positions_actual[self.current_sample][:] = joint_positions_actual        
         self.poseArrayCommanded[self.current_sample][:] = pose_commanded
         
+        # Store measurements consistently: expected (with estimated parameters) vs actual (ground truth)
         self.targetPoseExpected[self.current_sample][:] = pose_commanded
         self.targetPoseMeasured[self.current_sample][:] = pose_actual
         
@@ -406,7 +427,13 @@ class CalibrationConvergenceSimulator:
             
         
     def compute_jacobians(self, joint_angles, camera_to_target=None):
-        """Compute Jacobians for all measurements in current iteration"""
+        """Compute Jacobians for all measurements in current iteration
+        
+        Standard mode: Jacobian of robot end-effector pose w.r.t. parameters
+        Camera mode: Jacobian of target pose in world frame w.r.t. parameters
+        
+        Both use forward derivatives - no sign corrections needed due to consistent measurement model.
+        """
         l = self.l
         x = self.x
         q = self.q
@@ -453,10 +480,7 @@ class CalibrationConvergenceSimulator:
         partialsTrans = self.jacobian_translation.subs(subs_dict)   
         partialsRot = self.jacobian_rotation.subs(subs_dict)
         
-        # In camera mode, flip the sign of Jacobians due to inverse measurement relationship
-        if self.camera_mode:
-            partialsTrans = -partialsTrans
-            partialsRot = -partialsRot
+        # No sign correction needed - measurement directions are now consistent
             
         i = 0
         numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
@@ -476,7 +500,15 @@ class CalibrationConvergenceSimulator:
         return numJacobianTrans, numJacobianRot
         
     def compute_differences(self, measurements_actual, measurements_commanded):
-        """Compute differences between actual and commanded poses"""
+        """Compute differences between actual and commanded poses
+        
+        For both standard and camera modes:
+        - measurements_commanded: Expected pose using current parameter estimates
+        - measurements_actual: Actual measured pose (ground truth)
+        - Difference = actual - expected (what we observe minus what we predict)
+        - Jacobian shows how expected pose changes with parameters
+        - Least squares finds parameter changes to minimize (actual - expected)
+        """
         measurements_actual = np.array(measurements_actual).astype(np.float64)
         measurements_commanded = np.array(measurements_commanded).astype(np.float64)
         
@@ -615,8 +647,8 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.0,
-                 dXMagnitude=0.0, camera_mode=True)
+                dQMagnitude=0.1, dLMagnitude=0.1,
+                 dXMagnitude=0.1, camera_mode=False)
     
     robot = AR4Robot()
     robot.disable_logging()
