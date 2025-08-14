@@ -252,7 +252,7 @@ class CalibrationConvergenceSimulator:
         
         
         if pose is None:
-            pose = np.random.uniform(-0.03, 0.03, (1, 6))[0]
+            pose = np.random.uniform(-0.15, 0.15, (1, 6))[0]
         position = pose[:3]
         orientation =  pose[3:6]
         #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
@@ -346,8 +346,8 @@ class CalibrationConvergenceSimulator:
         
         # In camera mode, the sign correction in Jacobians means we need to flip parameter application
         if self.camera_mode:
-            joint_lengths_est = self.joint_lengths_nominal - np.sum(self.dLMat, axis=0)
-            XOffsets_est = self.XNominal - np.sum(self.dXMat, axis=0)
+            joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
+            XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
             joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
         else:
             joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
