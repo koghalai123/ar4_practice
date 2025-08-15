@@ -28,11 +28,32 @@ def get_new_end_effector_position(robot):
 
     globalHomePos = np.array([robot.pos_offsets["x"],robot.pos_offsets["y"],robot.pos_offsets["z"]])
     return relativeToHomeAtGround, random_pos, globalHomePos
-def calculate_camera_pose(x, y, z):
-    pitch = -np.arctan2(x, z)-np.pi/2
-    r = (x**2 + z**2)**0.5
-    roll = -np.arctan2(y, r)
-    yaw = 0
+def calculate_camera_pose(x, y, z, roll_offset=0.0, pitch_offset=0.0, yaw_offset=0.0):
+    # Calculate robot end effector orientation to point toward target
+    # Vector [x, y, z] is from end effector to target in world frame
+    
+    # Vector from end effector to target
+    vector_to_target = np.array([x, y, z])
+    distance = np.linalg.norm(vector_to_target)
+    
+    if distance == 0:
+        return 0.0, 0.0, 0.0
+    
+    # Calculate yaw: rotation around Z axis to point in XY direction of target
+    yaw = np.arctan2(y, x)
+    
+    # Calculate pitch: elevation angle from XY plane
+    xy_distance = np.sqrt(x**2 + y**2)
+    pitch = np.arctan2(z, xy_distance)
+    
+    # Keep roll at 0 (no rotation around the pointing direction)
+    roll = 0.0
+    
+    # Apply offsets
+    roll += roll_offset
+    pitch += pitch_offset
+    yaw += yaw_offset
+    
     return roll, pitch, yaw
 
 
@@ -108,8 +129,12 @@ def main(args=None):
                 globalEndEffectorPos = relativeToHomePos + globalHomePos
                 
                 # Calculate camera orientation to point at target
-                vectorToTarget =   globalEndEffectorPos - targetPosActual
-                roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], vectorToTarget[1], vectorToTarget[2])
+                # Vector should point FROM camera TO target
+                vectorToTarget = targetPosActual - globalEndEffectorPos
+                roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], 
+                                                         vectorToTarget[1], 
+                                                         vectorToTarget[2],
+                                                         )
                 
                 # Transform poses to robot's coordinate frame
                 targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
@@ -125,13 +150,14 @@ def main(args=None):
                     start=np.array([endEffectorPosWeirdFrame[0], endEffectorPosWeirdFrame[1], endEffectorPosWeirdFrame[2]]),
                     end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
                     thickness=0.01,
-                    id=1,  # Unique ID for each measurement
+                    id=1,
                     color=np.array([0.0, 1.0, 0.0])
                 )
 
                 # Move robot to desired pose
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll, pitch, yaw]
+                #euler_angles = np.array([0, 0, 0])
                 motionSucceeded = robot.move_to_pose_preferred_frame(position, euler_angles, frame)
                 if motionSucceeded:
                     break

@@ -289,7 +289,7 @@ class MoveItActionClient(Node):
             self._log_error(f"Error in move_to_joint_configuration: {str(e)}")
             return False
 
-    def move_to_pose(self, target_pose, target_link="link_6", velocity_scaling=0.3, acceleration_scaling=0.3):
+    def move_to_pose(self, target_pose, target_link="link_6", velocity_scaling=1.0, acceleration_scaling=1.0):
         """
         Move robot to specified pose
         :param target_pose: geometry_msgs/PoseStamped target pose
@@ -342,7 +342,7 @@ class MoveItActionClient(Node):
             constraint_region = BoundingVolume()
             box = SolidPrimitive()
             box.type = SolidPrimitive.BOX
-            box.dimensions = [0.02, 0.02, 0.02]  # 2cm tolerance
+            box.dimensions = [0.002, 0.002, 0.002]  # 2mm tolerance
             constraint_region.primitives = [box]
             constraint_region.primitive_poses = [target_pose.pose]
             position_constraint.constraint_region = constraint_region
@@ -353,9 +353,9 @@ class MoveItActionClient(Node):
             orientation_constraint.header = target_pose.header
             orientation_constraint.link_name = target_link
             orientation_constraint.orientation = target_pose.pose.orientation
-            orientation_constraint.absolute_x_axis_tolerance = 0.2
-            orientation_constraint.absolute_y_axis_tolerance = 0.2
-            orientation_constraint.absolute_z_axis_tolerance = 0.2
+            orientation_constraint.absolute_x_axis_tolerance = 0.002
+            orientation_constraint.absolute_y_axis_tolerance = 0.002
+            orientation_constraint.absolute_z_axis_tolerance = 0.002
             orientation_constraint.weight = 1.0
             
             # Combine constraints

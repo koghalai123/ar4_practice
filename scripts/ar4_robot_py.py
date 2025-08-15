@@ -27,8 +27,8 @@ class AR4Robot:
         self.moveit_client = MoveItActionClient(enable_logging=self.logging_enabled)
         
         # Default scaling factors for safety
-        self.default_velocity_scaling = 0.3
-        self.default_acceleration_scaling = 0.3
+        self.default_velocity_scaling = 1.0
+        self.default_acceleration_scaling = 1.0
         
         # Reference transformation for the end effector
         self.reference_translation = [0.0, 0.0, 0.0]
@@ -241,7 +241,7 @@ class AR4Robot:
         return self.move_to_joint_positions(joint_positions_rad, velocity_scaling, acceleration_scaling)
     
     def move_to_pose_preferred_frame(self, position, orientation_euler, 
-                                   reference_frame="base_link", target_link="link_6",
+                                   frame_id="base_link", target_link="link_6",
                                    velocity_scaling=None, acceleration_scaling=None):
         """
         Move to a specific pose using preferred reference frame
@@ -259,10 +259,10 @@ class AR4Robot:
         
         # Convert from preferred frame to MoveIt internal frame
         moveit_position, moveit_orientation = self.from_preferred_frame(
-            position, orientation_euler, reference_frame, "base_link"
+            position, orientation_euler, frame_id, "base_link"
         )
         
-        # Create pose message for MoveIt
+        '''# Create pose message for MoveIt
         target_pose = PoseStamped()
         target_pose.header.frame_id = "base_link"
         target_pose.header.stamp = self.moveit_client.get_clock().now().to_msg()
@@ -277,7 +277,9 @@ class AR4Robot:
         target_pose.pose.orientation.x = float(quat[0])
         target_pose.pose.orientation.y = float(quat[1])
         target_pose.pose.orientation.z = float(quat[2])
-        target_pose.pose.orientation.w = float(quat[3])
+        target_pose.pose.orientation.w = float(quat[3])'''
+        
+        
         
         self._log_info("=== Moving to Pose (Preferred Frame) ===")
         self._log_info(f"Target position (preferred frame): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
@@ -287,20 +289,29 @@ class AR4Robot:
         
         self.print_current_state("Before movement")
         
-        success = self.moveit_client.move_to_pose(
-            target_pose, target_link, velocity_scaling, acceleration_scaling
+        '''success = self.moveit_client.move_to_pose(
+            position=moveit_position, orientation_euler=moveit_orientation, target_link=target_link, velocity_scaling=velocity_scaling, acceleration_scaling=acceleration_scaling
         )
         
         if success:
             # Wait for movement to complete instead of fixed time
             self.wait_for_movement_complete()
-            self.print_current_state("After movement")
+            
+            # Debug: Check what pose was actually achieved
+            actual_pose = self.moveit_client.get_end_effector_pose("link_6")
+            if actual_pose:
+                actual_quat = actual_pose.pose.orientation
+                actual_euler = euler_from_quaternion([actual_quat.x, actual_quat.y, actual_quat.z, actual_quat.w])
+            
+            self.print_current_state("After movement")'''
+        success = self.move_to_pose(position=moveit_position, orientation_euler=moveit_orientation, 
+                     frame_id=frame_id, target_link=target_link)
         
         return success
     
     def move_to_pose(self, position, orientation_euler=None, orientation_quat=None, 
-                     frame_id="base_link", target_link="link_6",
-                     velocity_scaling=None, acceleration_scaling=None):
+                     frame_id="base_link", target_link="link_6", velocity_scaling = 1.0,
+                     acceleration_scaling = 1.0):
         """
         Move to a specific pose using MoveIt internal frame (original method for compatibility)
         :param position: [x, y, z] position in meters
