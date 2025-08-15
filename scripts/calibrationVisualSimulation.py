@@ -35,6 +35,7 @@ def calculate_camera_pose(x, y, z):
     yaw = 0
     return roll, pitch, yaw
 
+
 def print_current_position(robot,frame):
     current_pose = robot.get_current_pose(frame)
     position, orientation = current_pose
@@ -72,114 +73,108 @@ def camera_vector_from_pose_and_measurement(roll, pitch, yaw, distance):
     return vector
 
 def main(args=None):
-    #rclpy.init(args=args)
     frame = "end_effector_link"
 
     robot = AR4Robot()
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
 
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=5, dQMagnitude=0.1, dLMagnitude=0.0,dXMagnitude=0.1)
-    
-    '''target_pose = Pose()
-    target_pose.position.x = 0.0
-    target_pose.position.y = 0.3
-    target_pose.position.z = 0.3
-    target_pose.orientation.x = 0.0
-    target_pose.orientation.y = 0.0
-    target_pose.orientation.z = 0.0
-    target_pose.orientation.w = 1.0
-
-    # Compute inverse kinematics
-    joint_state = robot.moveit2.compute_ik(
-        position=target_pose.position,
-        quat_xyzw=target_pose.orientation,
-    )'''
-    
-    #pos,ori = robot.get_current_pose()
-    #joint_goals = robot.get_ik(pos,ori)
+    # Create simulator with camera mode for visual demonstration
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=8, 
+                                               dQMagnitude=0.0, dLMagnitude=0.0, 
+                                               dXMagnitude=0.0, camera_mode=True)
     
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
         simulator.set_current_iteration(j)
 
-
         # Generate individual measurements
         for i in range(simulator.n):
             counter = 0
             motionSucceeded = False
             while counter < 10:
+                # Generate random end-effector position pointing toward target
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
                 
+                # Define target position (same as simulator's target)
+                if simulator.camera_mode:
+                    targetPosActual = np.array([0.3,0,0])
+                    targetOrientActual = np.array([0,0,0])
+                else:
+                    targetPosActual = np.array([0,0,0])
+                    targetOrientActual = np.array([0,0,0])
+
+                globalEndEffectorPos = relativeToHomePos + globalHomePos
                 
-                
-                targetPosBelieved = np.array([globalHomePos[0], globalHomePos[1], 0])
-                targetPosActual = targetPosBelieved + np.array([0.05,0.05,0.05])
-                globalEndEffectorPos = relativeToHomePos+globalHomePos
-                
-                
-                vectorToTarget = globalEndEffectorPos-targetPosActual
+                # Calculate camera orientation to point at target
+                vectorToTarget =   globalEndEffectorPos - targetPosActual
                 roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], vectorToTarget[1], vectorToTarget[2])
                 
-                distanceToTarget = np.linalg.norm(vectorToTarget)
-                #calculatedVector = camera_vector_from_pose_and_measurement(roll, pitch, yaw, distanceToTarget)
-                #measuredGlobalEndEffectorPos = targetPosBelieved + calculatedVector
-                #measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame = robot.fromMyPreferredFrame(measuredGlobalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
+                # Transform poses to robot's coordinate frame
+                targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
+                    targetPosActual, targetOrientActual, 
+                    old_reference_frame="base_link", new_reference_frame="base_link")
+                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
+                    globalEndEffectorPos, np.array([roll,pitch,yaw]), 
+                    old_reference_frame="base_link", new_reference_frame="base_link")
 
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(targetPosActual, np.array([0,0,0]), old_reference_frame="base_link", new_reference_frame="base_link")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(globalEndEffectorPos, np.array([roll,pitch,yaw]), old_reference_frame="base_link", new_reference_frame="base_link")
-
-                
-                marker_publisher.publishPlane(np.array([0.146]),targetPosWeirdFrame)
-
+                # Visualize target and camera-to-target vector
+                marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
                 marker_publisher.publish_arrow_between_points(
-                    start=np.array([endEffectorPosWeirdFrame[0], endEffectorPosWeirdFrame[1], endEffectorPosWeirdFrame[2]]),  # Start at origin
-                    end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),   # End at point (1,1,1)
-                    thickness=0.01,                   # 1cm thick shaft
-                    id=20,                            # Unique ID
-                    color=np.array([0.0, 1.0, 0.0])   # Red color
+                    start=np.array([endEffectorPosWeirdFrame[0], endEffectorPosWeirdFrame[1], endEffectorPosWeirdFrame[2]]),
+                    end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
+                    thickness=0.01,
+                    id=1,  # Unique ID for each measurement
+                    color=np.array([0.0, 1.0, 0.0])
                 )
 
-                #print_current_position(robot,frame)
-                
+                # Move robot to desired pose
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
-                euler_angles = [roll,pitch,yaw]
-                motionSucceeded = robot.move_to_pose_preferred_frame(position, euler_angles,frame)
+                euler_angles = [roll, pitch, yaw]
+                motionSucceeded = robot.move_to_pose_preferred_frame(position, euler_angles, frame)
                 if motionSucceeded:
                     break
                 counter += 1
 
-            simulator.generate_measurement_pose(robot = robot, pose = np.concatenate((endEffectorPosWeirdFrame,endEffectorOrientWeirdFrame)), calibrate=True, frame = "base_link")
-            simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample-1])
-
-
-            '''#actual, commanded = simulator.generate_measurement(i)
-            actual = np.concatenate((measuredEndEffectorPosWeirdFrame, measuredEndEffectorOrientWeirdFrame))
-            commanded = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
-            if actual is not None and commanded is not None:
-                measurements_actual[valid_measurements] = actual
-                measurements_commanded[valid_measurements] = commanded
-                valid_measurements += 1'''
-            print(f"Measurement {i}: Generated")
+            # Generate measurement using the simulator's proper interface
+            pose_desired = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
+            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
+                robot=robot, pose=pose_desired, calibrate=True, frame="base_link")
+            
+            # Compute Jacobians properly based on mode
+            if simulator.camera_mode:
+                # Use the actual camera-to-target measurement
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample], 
+                    camera_to_target=simulator.camera_to_target_actual)
+            else:
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample])
+                
+            simulator.current_sample += 1  
+            print(f"Measurement {i}: Generated successfully")
             time.sleep(0.01)
 
-        '''# Trim arrays to only include valid measurements
-        if valid_measurements < simulator.n:
-            measurements_actual = measurements_actual[:valid_measurements]
-            measurements_commanded = measurements_commanded[:valid_measurements]'''
+        # Process all measurements for this iteration using the correct target arrays
+        results = simulator.process_iteration_results(
+                simulator.targetPoseMeasured, 
+                simulator.targetPoseExpected,
+                simulator.numJacobianTrans,
+                simulator.numJacobianRot)
         
-        # Process all measurements for this iteration
-        results = simulator.process_iteration_results(simulator.poseArrayActual, simulator.poseArrayCommanded,simulator.numJacobianTrans,simulator.numJacobianRot)
+        '''# Visualize convergence progress
+        avgTransAndRotError, dLEst, dQAct, dQEst, dXEst = results
+        print(f"Iteration {j} completed:")
+        print(f"  Translation Error: {avgTransAndRotError[0]:.6f}")
+        print(f"  Rotation Error: {avgTransAndRotError[1]:.6f}")
+        print(f"  Joint Error Estimate: {dQEst}")
+        print(f"  Base Offset Estimate: {dXEst}")'''
     
     # Save results to CSV
-    #simulator.save_to_csv()
+    #simulator.save_to_csv(filename='visual_calibration_data.csv')
     
-    
-        
-       
-
-
-
+    print('Visual calibration simulation completed!')
+    rclpy.shutdown()
 if __name__ == "__main__":
     main()

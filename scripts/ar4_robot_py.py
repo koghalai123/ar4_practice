@@ -81,7 +81,7 @@ class AR4Robot:
 
         return transformed_position, transformed_orientation
 
-    def to_preferred_frame(self, position, euler_angles, reference_frame="base_link"):
+    def to_preferred_frame(self, position, euler_angles, new_reference_frame="base_link"):
         """Convert from MoveIt internal frame to preferred reference frame"""
         # Apply transformation matrix
         position_homogeneous = np.array([position[0], position[1], position[2], 1.0])
@@ -100,9 +100,9 @@ class AR4Robot:
         transformed_orientation = np.array([pitch, roll, yaw])
         
         # Apply position offsets based on reference frame
-        if reference_frame == "end_effector_link":
+        if new_reference_frame == "end_effector_link":
             transformed_position = transformed_position - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
-        elif reference_frame == "base_link":
+        elif new_reference_frame == "base_link":
             transformed_position = transformed_position + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
             
         return transformed_position, transformed_orientation
