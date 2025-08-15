@@ -17,7 +17,7 @@ import time
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
-    random_pos = (random_numbers-0.5)*0.1
+    random_pos = (random_numbers-0.5)*0.05
     xOffset = 0
     yOffset = 0
     zOffset = robot.pos_offsets["z"]
@@ -102,7 +102,7 @@ def main(args=None):
 
     # Create simulator with camera mode for visual demonstration
     simulator = CalibrationConvergenceSimulator(n=8, numIters=8, 
-                                               dQMagnitude=0.0, dLMagnitude=0.0, 
+                                               dQMagnitude=0.1, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     
     # Process each iteration separately

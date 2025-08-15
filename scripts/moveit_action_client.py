@@ -353,9 +353,9 @@ class MoveItActionClient(Node):
             orientation_constraint.header = target_pose.header
             orientation_constraint.link_name = target_link
             orientation_constraint.orientation = target_pose.pose.orientation
-            orientation_constraint.absolute_x_axis_tolerance = 0.002
-            orientation_constraint.absolute_y_axis_tolerance = 0.002
-            orientation_constraint.absolute_z_axis_tolerance = 0.002
+            orientation_constraint.absolute_x_axis_tolerance = 0.02
+            orientation_constraint.absolute_y_axis_tolerance = 0.02
+            orientation_constraint.absolute_z_axis_tolerance = 0.02
             orientation_constraint.weight = 1.0
             
             # Combine constraints
@@ -365,7 +365,7 @@ class MoveItActionClient(Node):
             req.goal_constraints = [goal_constraint]
             
             # Set workspace bounds
-            req.workspace_parameters.header.frame_id = target_pose.header.frame_id
+            req.workspace_parameters.header.frame_id = target_link#target_pose.header.frame_id
             req.workspace_parameters.min_corner.x = -1.0
             req.workspace_parameters.min_corner.y = -1.0
             req.workspace_parameters.min_corner.z = -1.0
@@ -382,7 +382,7 @@ class MoveItActionClient(Node):
             planning_options.look_around_attempts = 0
             planning_options.max_safe_execution_cost = 1.0
             planning_options.replan = True
-            planning_options.replan_attempts = 3
+            planning_options.replan_attempts = 10
             planning_options.replan_delay = 1.0
             
             goal_msg.planning_options = planning_options

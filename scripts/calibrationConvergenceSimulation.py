@@ -103,14 +103,7 @@ class CalibrationConvergenceSimulator:
         return transform
         
     def symbolic_transform_with_ref_frames(self, xyz, euler_angles, rotation_order='XYZ'):
-        '''N = ReferenceFrame('N')  # World frame
-        B = N.orientnew('B', 'Body', euler_angles, rotation_order)
-        
-        R = N.dcm(B)
-        
-        T = eye(4)
-        T[:3, :3] = R.T  # Transpose to get rotation from B to N
-        T[:3, 3] = xyz'''
+
         rx_t, ry_t, rz_t = euler_angles
         cx, cy, cz = sp.cos(rx_t), sp.cos(ry_t), sp.cos(rz_t)
         sx, sy, sz = sp.sin(rx_t), sp.sin(ry_t), sp.sin(rz_t)
@@ -123,7 +116,6 @@ class CalibrationConvergenceSimulator:
         R_z = sp.Matrix([[cz, -sz, 0],
                             [sz, cz, 0],
                             [0, 0, 1]])
-        #R_ct = R_z * R_y * R_x #this one is close to working
         R_ct = (R_z * R_y * R_x)
         T = sp.eye(4)
         T[:3, :3] = R_ct

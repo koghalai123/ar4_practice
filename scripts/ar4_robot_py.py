@@ -329,7 +329,7 @@ class AR4Robot:
         
         # Create pose message
         target_pose = PoseStamped()
-        target_pose.header.frame_id = frame_id
+        target_pose.header.frame_id = "base_link"
         target_pose.header.stamp = self.moveit_client.get_clock().now().to_msg()
         
         # Set position
