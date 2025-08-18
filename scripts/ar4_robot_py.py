@@ -25,6 +25,7 @@ class AR4Robot:
         
         # Logging control (enabled by default)
         self.logging_enabled = True
+        self.warn_enabled = True
         
         # Create MoveIt client with logging setting
         self.moveit_client = MoveItActionClient(enable_logging=self.logging_enabled)
@@ -58,7 +59,8 @@ class AR4Robot:
     
     def _log_warn(self, message):
         """Centralized warning logging method (always outputs)"""
-        self.moveit_client.get_logger().warn(message)
+        if self.warn_enabled:
+            self.moveit_client.get_logger().warn(message)
     
     def _log_error(self, message):
         """Centralized error logging method (always outputs)"""
@@ -183,7 +185,7 @@ class AR4Robot:
         else:
             self._log_warn("Could not get end effector pose in preferred frame")
     
-    def wait_for_movement_complete(self, timeout=10.0):
+    def wait_for_movement_complete(self, timeout=1.0):
         """
         Wait for robot to stop moving by monitoring joint velocities
         :param timeout: Maximum time to wait in seconds
@@ -471,7 +473,11 @@ class AR4Robot:
         request.ik_request.group_name = "ar_manipulator"
         request.ik_request.ik_link_name = target_link
         request.ik_request.avoid_collisions = avoid_collisions
-        request.ik_request.timeout.sec = 5
+        
+        # THIS CANNOT BE A FLOAT OR IT CAUSES A VARIABLE TYPE ERROR. NO DECIMAL POINTS
+        request.ik_request.timeout.sec = 0
+        request.ik_request.timeout.nanosec = 100000000
+
         
         # Set the target pose
         request.ik_request.pose_stamped.header.frame_id = frame_id
@@ -484,14 +490,17 @@ class AR4Robot:
         request.ik_request.pose_stamped.pose.orientation.z = float(quat_xyzw[2])
         request.ik_request.pose_stamped.pose.orientation.w = float(quat_xyzw[3])
         
+        
+        request.ik_request.robot_state.is_diff = True
         # Set robot state (use current joint state as seed)
         current_joint_state = self.get_current_joint_state()
         if current_joint_state:
-            from sensor_msgs.msg import JointState
+            
             joint_state_msg = JointState()
             joint_state_msg.header.stamp = self.moveit_client.get_clock().now().to_msg()
             joint_state_msg.name = list(current_joint_state.keys())
             joint_state_msg.position = list(current_joint_state.values())
+            
             request.ik_request.robot_state.joint_state = joint_state_msg
         
         # Call the service

@@ -39,9 +39,6 @@ install (PROGRAMS
   scripts/movement_reader.py
   scripts/work_envelope_planner.py
   scripts/work_envelope_analyzer.py
-  scripts/ar4_robot_moveit_py.py
-  scripts/panda_robot_testing.py
-  scripts/ar4_robot_moveit_py2.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -204,7 +204,7 @@ class MoveItActionClient(Node):
             req.max_acceleration_scaling_factor = acceleration_scaling
             req.allowed_planning_time = 10.0
             
-            req.planner_id = "RRTConnectkConfigDefault"
+            req.planner_id = "PTP"
             
             '''# Set start state to current state
             if self._current_joint_state:
@@ -226,8 +226,8 @@ class MoveItActionClient(Node):
                 constraint = JointConstraint()
                 constraint.joint_name = joint_name
                 constraint.position = position
-                constraint.tolerance_above = 0.1
-                constraint.tolerance_below = 0.1
+                constraint.tolerance_above = 0.001
+                constraint.tolerance_below = 0.001
                 constraint.weight = 1.0
                 joint_constraints.append(constraint)
             
@@ -251,7 +251,7 @@ class MoveItActionClient(Node):
             planning_options.plan_only = False
             planning_options.look_around = False
             planning_options.look_around_attempts = 0
-            planning_options.max_safe_execution_cost = 1.0
+            planning_options.max_safe_execution_cost = 10.0
             planning_options.replan = True
             planning_options.replan_attempts = 10
             planning_options.replan_delay = 0.0
@@ -385,7 +385,7 @@ class MoveItActionClient(Node):
             planning_options.plan_only = False
             planning_options.look_around = False
             planning_options.look_around_attempts = 0
-            planning_options.max_safe_execution_cost = 1.0
+            planning_options.max_safe_execution_cost = 10.0
             planning_options.replan = True
             planning_options.replan_attempts = 10
             planning_options.replan_delay = 0.0

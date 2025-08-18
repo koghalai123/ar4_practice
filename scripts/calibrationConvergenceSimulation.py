@@ -292,23 +292,27 @@ class CalibrationConvergenceSimulator:
     def generate_measurement_pose(self, robot, pose = None, calibrate=False, frame = "end_effector_link"):
         
         #FRAME IS IN THE END EFFECTOR LINK FRAME
+        acceptRandom = False
         if pose is None:
             pose = np.random.uniform(-0.15, 0.15, (1, 6))[0]
+            acceptRandom= True
         position = pose[:3]
         orientation =  pose[3:6]
         #transformed_position, transformed_orientation = robot.fromMyPreferredFrame(position, orientation, old_reference_frame=frame, new_reference_frame="base_link")
         
         #pos,ori = robot.get_current_pose()
-        joint_positions_commanded = robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
-        #robot.get_fk(joint_positions_commanded)
-        if self.camera_mode:
-            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_commanded, calibrate)
+        joint_positions_ik = robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
+        if joint_positions_ik is not None or acceptRandom:
+            #robot.get_fk(joint_positions_commanded)
+            if self.camera_mode:
+                pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_ik, calibrate)
+            else:
+                pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_ik, calibrate)
+        
+        
+            return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
         else:
-            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded, calibrate)
-        
-        
-        return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
-        
+            return None, None, None, None
         
     def generate_measurement_joints_camera(self, joint_positions_commanded=None, calibrate=True):
         """Generate camera-based measurements using full homogeneous transformations to known targets
