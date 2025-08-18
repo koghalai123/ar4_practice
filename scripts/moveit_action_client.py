@@ -22,6 +22,7 @@ from std_msgs.msg import Header
 from tf_transformations import euler_from_quaternion
 import time
 import numpy as np
+import math
 
 class MoveItActionClient(Node):
     def __init__(self, enable_logging=True):
@@ -190,8 +191,49 @@ class MoveItActionClient(Node):
         :param acceleration_scaling: Acceleration scaling factor (0.0 to 1.0)
         """
         try:
-            # Print current state before movement
-            self.print_robot_state("Current state before movement")
+            # Define ACTUAL joint limits from mk3.yaml (converted from degrees to radians)
+            joint_limits = {
+                'joint_1': (math.radians(-170), math.radians(170)),   # -2.967 to 2.967 rad
+                'joint_2': (math.radians(-42), math.radians(90)),     # -0.733 to 1.571 rad  
+                'joint_3': (math.radians(-89), math.radians(52)),     # -1.553 to 0.908 rad
+                'joint_4': (math.radians(-180), math.radians(180)),   # -3.142 to 3.142 rad
+                'joint_5': (math.radians(-105), math.radians(105)),   # -1.833 to 1.833 rad
+                'joint_6': (math.radians(-200), math.radians(200))    # -3.142 to 3.142 rad
+            }
+            
+            # Safety margin from limits (in radians) - adjust as needed
+            safety_margin = 0.01
+            
+            # Convert to dictionary if it's a list
+            joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+            joint_positions_dict = {}
+            for i, name in enumerate(joint_names):
+                joint_positions_dict[name] = float(joint_positions[i])
+
+            
+            # Check bounds for each joint
+            bounds_violated = False
+            for joint_name, target_pos in joint_positions_dict.items():
+                if joint_name in joint_limits:
+                    min_limit, max_limit = joint_limits[joint_name]
+                    safe_min = min_limit + safety_margin
+                    safe_max = max_limit - safety_margin
+                    
+                    if target_pos < safe_min or target_pos > safe_max:
+                        self._log_error(f"Joint {joint_name} target position {target_pos:.4f} rad  "
+                                    f"is outside safe bounds [{safe_min:.4f}, {safe_max:.4f}] rad ")
+                        '''self._log_error(f"  Actual limits: [{min_limit:.4f}, {max_limit:.4f}] rad "
+                                    f"([{math.degrees(min_limit):.1f}°, {math.degrees(max_limit):.1f}°])")'''
+                        bounds_violated = True
+                    else:
+                        # Log successful bounds check
+                        self._log_info(f"Joint {joint_name}: {target_pos:.4f} rad ({math.degrees(target_pos):.1f}°) "
+                                    f"is within safe bounds")
+            
+            if bounds_violated:
+                #self._log_error("Movement rejected due to joint limit violations!")
+                return False
+
             
             # Create the goal
             goal_msg = MoveGroup.Goal()
@@ -213,12 +255,7 @@ class MoveItActionClient(Node):
                 req.start_state = start_state'''
             
             
-            joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
             
-            # Convert to dictionary
-            joint_positions_dict = {}
-            for i, name in enumerate(joint_names):
-                joint_positions_dict[name] = float(joint_positions[i])
 
             # Set joint constraints
             joint_constraints = []

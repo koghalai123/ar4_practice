@@ -185,7 +185,7 @@ class AR4Robot:
         else:
             self._log_warn("Could not get end effector pose in preferred frame")
     
-    def wait_for_movement_complete(self, timeout=1.0):
+    '''def wait_for_movement_complete(self, timeout=1.0):
         """
         Wait for robot to stop moving by monitoring joint velocities
         :param timeout: Maximum time to wait in seconds
@@ -231,7 +231,7 @@ class AR4Robot:
             time.sleep(0.1)
         
         self._log_warn(f"Movement completion timeout after {timeout} seconds")
-        return False
+        return False'''
     
     def move_to_joint_positions(self, joint_positions, velocity_scaling=None, acceleration_scaling=None):
         """
@@ -254,7 +254,6 @@ class AR4Robot:
         
         if success:
             # Wait for movement to complete instead of fixed time
-            self.wait_for_movement_complete()
             self.print_current_state("After movement")
         
         return success
@@ -397,7 +396,6 @@ class AR4Robot:
         
         if success:
             # Wait for movement to complete instead of fixed time
-            self.wait_for_movement_complete()
             self.print_current_state("After movement")
         
         return success

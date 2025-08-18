@@ -20,7 +20,7 @@ import io
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
-    scale = 0.1
+    scale = 0.2
     random_pos = (random_numbers-0.5)*scale
     xOffset = 0 - scale
     yOffset = 0
@@ -117,7 +117,7 @@ def main(args=None):
         for i in range(simulator.n):
             counter = 0
             motionSucceeded = False
-            while counter < 10:
+            while motionSucceeded is False:
                 # Generate random end-effector position pointing toward target
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
                 
