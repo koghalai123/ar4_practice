@@ -81,7 +81,7 @@ class AR4Robot:
 
         return transformed_position, transformed_orientation
 
-    def to_preferred_frame(self, position, euler_angles, new_reference_frame="base_link"):
+    def to_preferred_frame(self, position=None, euler_angles=None, new_reference_frame="base_link"):
         """Convert from MoveIt internal frame to preferred reference frame"""
         # Apply transformation matrix
         position_homogeneous = np.array([position[0], position[1], position[2], 1.0])
@@ -384,16 +384,6 @@ class AR4Robot:
         self._log_info("=== Moving to Home Position ===")
         return self.move_to_joint_positions(home_position)
     
-    def set_velocity_scaling(self, scaling):
-        """Set default velocity scaling factor (0.0 to 1.0)"""
-        self.default_velocity_scaling = max(0.0, min(1.0, scaling))
-        self._log_info(f"Velocity scaling set to: {self.default_velocity_scaling}")
-    
-    def set_acceleration_scaling(self, scaling):
-        """Set default acceleration scaling factor (0.0 to 1.0)"""
-        self.default_acceleration_scaling = max(0.0, min(1.0, scaling))
-        self._log_info(f"Acceleration scaling set to: {self.default_acceleration_scaling}")
-    
     def enable_logging(self):
         """Enable informational logging"""
         self.logging_enabled = True
@@ -407,21 +397,11 @@ class AR4Robot:
         self.logging_enabled = False
         self.moveit_client.logging_enabled = False
     
-    def toggle_logging(self):
-        """Toggle logging on/off"""
-        if self.logging_enabled:
-            self.disable_logging()
-        else:
-            self.enable_logging()
-    
-    def is_logging_enabled(self):
-        """Check if logging is enabled"""
-        return self.logging_enabled
-    
-    def wait(self, seconds):
+
+    '''def wait(self, seconds):
         """Wait for specified number of seconds (kept for manual delays if needed)"""
         self._log_info(f"Waiting {seconds} seconds...")
-        time.sleep(seconds)
+        time.sleep(seconds)'''
     
     def shutdown(self):
         """Shutdown the robot interface"""
@@ -504,6 +484,122 @@ class AR4Robot:
         except Exception as e:
             self._log_error(f"IK service call exception: {e}")
             return None
+        
+
+    def get_fk(self, joint_positions, target_link="link_6", frame_id="base_link"):
+        """
+        Calculate forward kinematics for given joint positions.
+        
+        Parameters:
+        - joint_positions: Dictionary mapping joint names to angles (in radians)
+                        OR numpy array of 6 joint angles [joint_1, joint_2, ..., joint_6]
+        - target_link: Target link name (default "link_6" for end effector)
+        - frame_id: Reference frame for the returned pose
+        
+        Returns:
+        - Tuple (position, euler_angles) where:
+        * position: [x, y, z] position in meters in the specified frame
+        * euler_angles: [roll, pitch, yaw] in radians in the specified frame
+        - Returns (None, None) if FK calculation fails
+        """
+        try:
+            # Handle different input formats
+            if isinstance(joint_positions, np.ndarray):
+                # Convert numpy array to dictionary
+                if len(joint_positions) != 6:
+                    self._log_error("Joint positions array must have 6 elements")
+                    return None, None
+                joint_dict = {
+                    f'joint_{i+1}': float(joint_positions[i]) 
+                    for i in range(6)
+                }
+            elif isinstance(joint_positions, dict):
+                joint_dict = joint_positions
+            else:
+                self._log_error("joint_positions must be dict or numpy array")
+                return None, None
+            
+            # Create a robot state with the specified joint positions
+            from moveit_msgs.srv import GetPositionFK
+            from moveit_msgs.msg import RobotState
+            from sensor_msgs.msg import JointState
+            
+            # Create FK service client if it doesn't exist
+            if not hasattr(self, '_fk_client'):
+                self._fk_client = self.moveit_client.create_client(
+                    GetPositionFK, 
+                    'compute_fk'
+                )
+            
+            # Wait for service to become available
+            if not self._fk_client.wait_for_service(timeout_sec=5.0):
+                self._log_error("FK service not available")
+                return None, None
+            
+            # Create the request
+            request = GetPositionFK.Request()
+            
+            # Set up the FK request
+            request.fk_link_names = [target_link]
+            request.header.frame_id = "base_link"  # Always compute in base_link first
+            request.header.stamp = self.moveit_client.get_clock().now().to_msg()
+            
+            # Create robot state with specified joint positions
+            robot_state = RobotState()
+            joint_state = JointState()
+            joint_state.header.stamp = self.moveit_client.get_clock().now().to_msg()
+            
+            # Set joint positions
+            joint_state.name = list(joint_dict.keys())
+            joint_state.position = list(joint_dict.values())
+            
+            robot_state.joint_state = joint_state
+            request.robot_state = robot_state
+            
+            # Call the service
+            future = self._fk_client.call_async(request)
+            rclpy.spin_until_future_complete(self.moveit_client, future, timeout_sec=10.0)
+            
+            if future.result() is not None:
+                response = future.result()
+                if response.error_code.val == response.error_code.SUCCESS:
+                    if len(response.pose_stamped) > 0:
+                        pose_stamped = response.pose_stamped[0]
+                        
+                        # Extract position
+                        pos = pose_stamped.pose.position
+                        position = np.array([pos.x, pos.y, pos.z])
+                        
+                        # Extract orientation and convert to euler
+                        orient = pose_stamped.pose.orientation
+                        quat = [orient.x, orient.y, orient.z, orient.w]
+                        euler_angles = np.array(euler_from_quaternion(quat))
+                        
+                        # Convert from MoveIt's base_link frame to desired frame
+                        position_preferred, euler_angles_preferred = self.to_preferred_frame(
+                            position=position, euler_angles=euler_angles, new_reference_frame=frame_id
+                        )
+                        
+                        self._log_info(f"FK solution for {target_link}:")
+                        self._log_info(f"  Position ({frame_id}): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}] m")
+                        self._log_info(f"  Orientation ({frame_id} RPY): [{euler_angles[0]:.3f}, {euler_angles[1]:.3f}, {euler_angles[2]:.3f}] rad")
+                        self._log_info(f"  Orientation (degrees): [{np.degrees(euler_angles[0]):.1f}°, {np.degrees(euler_angles[1]):.1f}°, {np.degrees(euler_angles[2]):.1f}°]")
+                        
+
+                        return pose_preferred
+                    else:
+                        self._log_error("FK service returned empty pose list")
+                        return None, None
+                else:
+                    self._log_error(f"FK service failed with error code: {response.error_code.val}")
+                    return None, None
+            else:
+                self._log_error("FK service call failed")
+                return None, None
+                
+        except Exception as e:
+            self._log_error(f"FK calculation exception: {e}")
+            return None, None
     
     def get_ik(self, position, euler_angles=None, 
                frame_id="base_link", target_link="link_6", avoid_collisions=True):

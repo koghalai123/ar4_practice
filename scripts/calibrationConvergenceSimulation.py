@@ -152,9 +152,6 @@ class CalibrationConvergenceSimulator:
         self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [0,0,0], rotation_order='XYZ')
         self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='XYZ')
         
-        '''for i in range(1, 7):
-            key = "Joint" + str(i)'''
-            
         for i in range(1, 7):
             key = "Joint" + str(i)
             symbolic_matrix = self.symbolic_matrices[key]
@@ -166,12 +163,10 @@ class CalibrationConvergenceSimulator:
             self.baseToWrist = self.baseToWrist * symbolic_matrix
             self.wristToBase = symbolic_matrix.inv() * self.wristToBase
             self.symbolic_matrices[key] = symbolic_matrix
-        #baseToWrist = sp.eye(4)
+
         self.originToWrist = self.originToBase*self.baseToWrist
         
         if self.camera_mode:
-            # In camera mode, we want Jacobians of world target pose w.r.t. robot parameters
-            # Keep the original formulation but with corrected signs
             self.measured_target_position = self.camera_measurements[:3]
             self.measured_target_orientation = self.camera_measurements[3:]
 
@@ -182,17 +177,11 @@ class CalibrationConvergenceSimulator:
             self.translation_vector = self.originToTarget[:3, 3]
             self.rotation_matrix = self.originToTarget[:3, :3]
         else:
-            # Standard mode: origin -> base -> wrist
             self.translation_vector = self.originToWrist[:3, 3]
             self.rotation_matrix = self.originToWrist[:3, :3]
             self.originToTarget = self.originToWrist
 
-        
-        '''self.pitch = sp.asin(-self.rotation_matrix[2, 0])
-        self.roll = sp.atan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
-        self.yaw = sp.atan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
-        self.euler_angles = sp.Matrix([self.roll, self.pitch, self.yaw])'''
-        
+        # CREATE THE JACOBIANS FIRST (this was missing!)
         vars = list(self.q) + list(self.l) + list(self.x)
         
         self.jacobian_translation = self.translation_vector.jacobian(vars)
@@ -202,6 +191,28 @@ class CalibrationConvergenceSimulator:
         
         self.joint_lengths_nominal = np.ones(6)
         self.joint_lengths_actual = self.joint_lengths_nominal + self.dL.flatten()
+
+        # NOW create the lambdify functions
+        vars_list = list(self.q) + list(self.l) + list(self.x)
+        if self.camera_mode:
+            vars_list += list(self.camera_measurements)
+                    
+        # Convert the JACOBIANS to fast numpy functions
+        self.jacobian_translation_func = sp.lambdify(
+            vars_list, self.jacobian_translation, 'numpy', cse=True
+        )
+        
+        self.jacobian_rotation_func = sp.lambdify(
+            vars_list, self.jacobian_rotation, 'numpy', cse=True
+        )
+        
+        # Convert FK to numerical functions (for forward kinematics only)
+        self.fk_translation_func = sp.lambdify(
+            vars_list, self.translation_vector, 'numpy', cse=True
+        )
+        self.fk_rotation_func = sp.lambdify(
+            vars_list, self.rotation_matrix, 'numpy', cse=True
+        )
     
     def set_current_iteration(self, iteration_index):
         """Set the current iteration index"""
@@ -211,7 +222,7 @@ class CalibrationConvergenceSimulator:
             print(f"Warning: Invalid iteration index {iteration_index}. Using 0 instead.")
             self.current_iter = 0
     
-    def get_fk_calibration_model(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
+    def get_fk_calibration_model_slow(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
         l = self.l
         x = self.x
         q = self.q
@@ -259,9 +270,28 @@ class CalibrationConvergenceSimulator:
         
         return pose
     
+    def get_fk_calibration_model(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
+        """Fast numerical FK computation using lambdify"""
+        
+        if self.camera_mode:
+            if camera_to_target is None:
+                camera_to_target = np.zeros(6)
+            args = list(joint_positions) + list(joint_lengths) + list(XOffsets) + list(camera_to_target)
+        else:
+            args = list(joint_positions) + list(joint_lengths) + list(XOffsets)
+        
+        # Evaluate numerically
+        translation = self.fk_translation_func(*args)
+        rotation_matrix = self.fk_rotation_func(*args)
+        
+        # Convert rotation matrix to Euler angles
+        euler_angles = R.from_matrix(np.array(rotation_matrix).astype(np.float64)).as_euler('xyz')
+        
+        return np.concatenate([translation.flatten(), euler_angles])
+    
     def generate_measurement_pose(self, robot, pose = None, calibrate=False, frame = "end_effector_link"):
         
-        
+        #FRAME IS IN THE END EFFECTOR LINK FRAME
         if pose is None:
             pose = np.random.uniform(-0.15, 0.15, (1, 6))[0]
         position = pose[:3]
@@ -418,7 +448,7 @@ class CalibrationConvergenceSimulator:
     
             
         
-    def compute_jacobians(self, joint_angles, camera_to_target=None):
+    def compute_jacobians_slow(self, joint_angles, camera_to_target=None):
         """Compute Jacobians for all measurements in current iteration
         
         Standard mode: Jacobian of robot end-effector pose w.r.t. parameters
@@ -490,6 +520,57 @@ class CalibrationConvergenceSimulator:
             self.numJacobianRot = np.vstack((self.numJacobianRot, numJacobianRot))
         
         return numJacobianTrans, numJacobianRot
+    def compute_jacobians(self, joint_angles, camera_to_target=None):
+        """Fast numerical Jacobian computation using lambdify"""
+        
+        joint_lengths = self.joint_lengths_nominal
+        XOffsets = self.XNominal
+        
+        if self.camera_mode:
+            if camera_to_target is None:
+                camera_to_target = np.zeros(6)
+            args = list(joint_angles) + list(joint_lengths) + list(XOffsets) + list(camera_to_target)
+        else:
+            args = list(joint_angles) + list(joint_lengths) + list(XOffsets)
+        
+        # Evaluate the pre-computed Jacobians directly
+        numJacobianTrans_raw = self.jacobian_translation_func(*args)
+        numJacobianRot_raw = self.jacobian_rotation_func(*args)
+        
+        # Convert to numpy arrays with correct shape
+        numJacobianTrans = np.array(numJacobianTrans_raw, dtype=np.float64)
+        numJacobianRot = np.array(numJacobianRot_raw, dtype=np.float64)
+        
+        # Debug the shapes
+        #print(f"Raw Jacobian shapes: Trans={numJacobianTrans.shape}, Rot={numJacobianRot.shape}")
+        
+        # The symbolic jacobians should give us the right shape directly
+        # But if they're transposed, fix them:
+        if numJacobianTrans.shape == (18, 3):
+            numJacobianTrans = numJacobianTrans.T
+        if numJacobianRot.shape == (18, 9):
+            numJacobianRot = numJacobianRot.T
+            
+        ## Ensure final shape is correct
+        assert numJacobianTrans.shape == (3, 18), f"Translation Jacobian wrong shape: {numJacobianTrans.shape}"
+        assert numJacobianRot.shape == (9, 18), f"Rotation Jacobian wrong shape: {numJacobianRot.shape}"
+        
+        #print(f"Final Jacobian shapes: Trans={numJacobianTrans.shape}, Rot={numJacobianRot.shape}")
+        
+        # Store for iteration processing (same as slow version)
+        if self.numJacobianTrans.size == 0:
+            self.numJacobianTrans = numJacobianTrans
+        else:
+            self.numJacobianTrans = np.vstack((self.numJacobianTrans, numJacobianTrans))
+
+        if self.numJacobianRot.size == 0:
+            self.numJacobianRot = numJacobianRot
+        else:
+            self.numJacobianRot = np.vstack((self.numJacobianRot, numJacobianRot))
+        
+        return numJacobianTrans, numJacobianRot
+
+
         
     def compute_differences(self, measurements_actual, measurements_commanded):
         """Compute differences between actual and commanded poses

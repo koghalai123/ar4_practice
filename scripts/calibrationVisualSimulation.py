@@ -14,6 +14,9 @@ from visualization_msgs.msg import Marker, MarkerArray
 import csv
 import os
 import time
+import cProfile
+import pstats
+import io
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
@@ -99,9 +102,9 @@ def main(args=None):
     robot = AR4Robot()
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
-
+    test_pose = robot.get_fk(np.array([0,0,0,0,0,0]))
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=8, 
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=5, 
                                                dQMagnitude=0.1, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     
@@ -136,14 +139,22 @@ def main(args=None):
                                                          vectorToTarget[2],
                                                          )
                 
+                # Generate measurement using the simulator's proper interface
+                pose_desired = np.concatenate((globalEndEffectorPos, np.array([roll,pitch,yaw])))
+                pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
+                    robot=robot, pose=pose_desired, calibrate=True, frame="base_link"
+                )
+
+
                 # Transform poses to robot's coordinate frame
                 targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
                     targetPosActual, targetOrientActual, 
                     old_reference_frame="base_link", new_reference_frame="base_link")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
+                '''endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
                     globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                    old_reference_frame="base_link", new_reference_frame="base_link")
-
+                    old_reference_frame="base_link", new_reference_frame="base_link")'''
+                
+                
                 # Visualize target and camera-to-target vector
                 marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
                 marker_publisher.publish_arrow_between_points(
@@ -158,15 +169,12 @@ def main(args=None):
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll, pitch, yaw]
                 #euler_angles = np.array([0, 0, 0])
-                motionSucceeded = robot.move_to_pose_preferred_frame(position, euler_angles, frame)
+                motionSucceeded = robot.move_to_pose_preferred_frame(pose_actual[:3], pose_actual[3:], frame)
                 if motionSucceeded:
                     break
                 counter += 1
 
-            # Generate measurement using the simulator's proper interface
-            pose_desired = np.concatenate((endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame))
-            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
-                robot=robot, pose=pose_desired, calibrate=True, frame="base_link")
+            
             
             # Compute Jacobians properly based on mode
             if simulator.camera_mode:
@@ -202,5 +210,22 @@ def main(args=None):
     
     print('Visual calibration simulation completed!')
     rclpy.shutdown()
-if __name__ == "__main__":
+
+def profile_main():
+    pr = cProfile.Profile()
+    pr.enable()
+    
+    # Your existing main() function call
     main()
+    
+    pr.disable()
+    
+    # Create a stats object and sort by cumulative time
+    s = io.StringIO()
+    sortby = 'cumulative'
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    #ps.print_stats(30)  # Show top 30 time-consuming functions
+    #print(s.getvalue())
+
+if __name__ == "__main__":
+    profile_main()

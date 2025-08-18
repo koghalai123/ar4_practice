@@ -167,9 +167,6 @@ class MoveItActionClient(Node):
         else:
             self._log_warn("Could not get end effector pose")
 
-    def wait_for_execution_complete(self, timeout=30.0):
-        """Wait for any ongoing execution to complete"""
-        time.sleep(0.5)  # Small delay to ensure state is updated
         
     def reset_planning_scene(self):
         """Reset the planning scene to clear any cached states"""
@@ -273,8 +270,6 @@ class MoveItActionClient(Node):
             if result and result.result.error_code.val == 1:  # SUCCESS
                 self._log_info("Movement completed successfully!")
                 
-                # Wait for execution to complete and update state
-                self.wait_for_execution_complete()
                 
                 # Print final state
                 self.print_robot_state("Final state after movement")
@@ -322,7 +317,7 @@ class MoveItActionClient(Node):
             req.num_planning_attempts = 10
             req.max_velocity_scaling_factor = velocity_scaling
             req.max_acceleration_scaling_factor = acceleration_scaling
-            req.allowed_planning_time = 10.0
+            req.allowed_planning_time = 2.0
             
             # Set start state to current state
             if self._current_joint_state:
@@ -342,7 +337,7 @@ class MoveItActionClient(Node):
             constraint_region = BoundingVolume()
             box = SolidPrimitive()
             box.type = SolidPrimitive.BOX
-            box.dimensions = [0.002, 0.002, 0.002]  # 2mm tolerance
+            box.dimensions = [0.01, 0.01, 0.01]  # 1cm tolerance
             constraint_region.primitives = [box]
             constraint_region.primitive_poses = [target_pose.pose]
             position_constraint.constraint_region = constraint_region
@@ -383,7 +378,7 @@ class MoveItActionClient(Node):
             planning_options.max_safe_execution_cost = 1.0
             planning_options.replan = True
             planning_options.replan_attempts = 10
-            planning_options.replan_delay = 1.0
+            planning_options.replan_delay = 0.0
             
             goal_msg.planning_options = planning_options
             
@@ -392,7 +387,7 @@ class MoveItActionClient(Node):
             future = self._action_client.send_goal_async(goal_msg)
             
             # Wait for the goal to be accepted
-            rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
             
             goal_handle = future.result()
             if not goal_handle.accepted:
@@ -408,9 +403,6 @@ class MoveItActionClient(Node):
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
                 self._log_info("Movement completed successfully!")
-                
-                # Wait for execution to complete and update state
-                self.wait_for_execution_complete()
                 
                 # Print final state
                 self.print_robot_state("Final state after pose movement", target_link)
