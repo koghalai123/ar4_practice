@@ -102,7 +102,6 @@ def main(args=None):
     robot = AR4Robot()
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
-    test_pose = robot.get_fk(np.array([0,0,0,0,0,0]))
     # Create simulator with camera mode for visual demonstration
     simulator = CalibrationConvergenceSimulator(n=8, numIters=5, 
                                                dQMagnitude=0.1, dLMagnitude=0.0, 
@@ -140,6 +139,7 @@ def main(args=None):
                                                          )
                 
                 # Generate measurement using the simulator's proper interface
+                #pos_desired, orient_desired = robot.from_preferred_frame(position=globalEndEffectorPos, euler_angles=np.array([roll,pitch,yaw]),old_reference_frame="base_link", new_reference_frame="base_link")
                 pose_desired = np.concatenate((globalEndEffectorPos, np.array([roll,pitch,yaw])))
                 pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
                     robot=robot, pose=pose_desired, calibrate=True, frame="base_link"
@@ -155,22 +155,24 @@ def main(args=None):
                     old_reference_frame="base_link", new_reference_frame="base_link")'''
                 
                 
-                # Visualize target and camera-to-target vector
-                marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
-                marker_publisher.publish_arrow_between_points(
-                    start=np.array([endEffectorPosWeirdFrame[0], endEffectorPosWeirdFrame[1], endEffectorPosWeirdFrame[2]]),
-                    end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
-                    thickness=0.01,
-                    id=1,
-                    color=np.array([0.0, 1.0, 0.0])
-                )
+                
 
                 # Move robot to desired pose
                 position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
                 euler_angles = [roll, pitch, yaw]
                 #euler_angles = np.array([0, 0, 0])
-                motionSucceeded = robot.move_to_pose_preferred_frame(pose_actual[:3], pose_actual[3:], frame)
+                #motionSucceeded = robot.move_to_pose_preferred_frame(pose_actual[:3], pose_actual[3:], frame)
+                motionSucceeded = robot.move_to_joint_positions(joint_positions_actual)
                 if motionSucceeded:
+                    # Visualize target and camera-to-target vector
+                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
+                    marker_publisher.publish_arrow_between_points(
+                    start=np.array([pose_actual[0], pose_actual[1], pose_actual[2]]),
+                    end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
+                    thickness=0.01,
+                    id=1,
+                    color=np.array([0.0, 1.0, 0.0])
+                )
                     break
                 counter += 1
 

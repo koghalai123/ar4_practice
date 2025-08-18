@@ -300,7 +300,7 @@ class CalibrationConvergenceSimulator:
         
         #pos,ori = robot.get_current_pose()
         joint_positions_commanded = robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
-        
+        #robot.get_fk(joint_positions_commanded)
         if self.camera_mode:
             pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_commanded, calibrate)
         else:

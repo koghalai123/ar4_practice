@@ -182,7 +182,7 @@ class MoveItActionClient(Node):
         except Exception as e:
             self._log_warn(f"Could not reset planning scene: {e}")
 
-    def move_to_joint_configuration(self, joint_positions, velocity_scaling=0.3, acceleration_scaling=0.3):
+    def move_to_joint_configuration(self, joint_positions, velocity_scaling=1.0, acceleration_scaling=1.0):
         """
         Move robot to specified joint configuration
         :param joint_positions: Dictionary of joint_name: position
@@ -204,20 +204,30 @@ class MoveItActionClient(Node):
             req.max_acceleration_scaling_factor = acceleration_scaling
             req.allowed_planning_time = 10.0
             
-            # Set start state to current state
+            req.planner_id = "RRTConnectkConfigDefault"
+            
+            '''# Set start state to current state
             if self._current_joint_state:
                 start_state = RobotState()
                 start_state.joint_state = self._current_joint_state
-                req.start_state = start_state
+                req.start_state = start_state'''
             
+            
+            joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+            
+            # Convert to dictionary
+            joint_positions_dict = {}
+            for i, name in enumerate(joint_names):
+                joint_positions_dict[name] = float(joint_positions[i])
+
             # Set joint constraints
             joint_constraints = []
-            for joint_name, position in joint_positions.items():
+            for joint_name, position in joint_positions_dict.items():
                 constraint = JointConstraint()
                 constraint.joint_name = joint_name
                 constraint.position = position
-                constraint.tolerance_above = 0.01
-                constraint.tolerance_below = 0.01
+                constraint.tolerance_above = 0.1
+                constraint.tolerance_below = 0.1
                 constraint.weight = 1.0
                 joint_constraints.append(constraint)
             
@@ -227,12 +237,12 @@ class MoveItActionClient(Node):
             
             # Set workspace bounds
             req.workspace_parameters.header.frame_id = "base_link"
-            req.workspace_parameters.min_corner.x = -1.0
-            req.workspace_parameters.min_corner.y = -1.0
-            req.workspace_parameters.min_corner.z = -1.0
-            req.workspace_parameters.max_corner.x = 1.0
-            req.workspace_parameters.max_corner.y = 1.0
-            req.workspace_parameters.max_corner.z = 1.0
+            req.workspace_parameters.min_corner.x = -10.0
+            req.workspace_parameters.min_corner.y = -10.0
+            req.workspace_parameters.min_corner.z = -10.0
+            req.workspace_parameters.max_corner.x = 10.0
+            req.workspace_parameters.max_corner.y = 10.0
+            req.workspace_parameters.max_corner.z = 10.0
             
             goal_msg.request = req
             
@@ -243,8 +253,8 @@ class MoveItActionClient(Node):
             planning_options.look_around_attempts = 0
             planning_options.max_safe_execution_cost = 1.0
             planning_options.replan = True
-            planning_options.replan_attempts = 3
-            planning_options.replan_delay = 1.0
+            planning_options.replan_attempts = 10
+            planning_options.replan_delay = 0.0
             
             goal_msg.planning_options = planning_options
             

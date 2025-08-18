@@ -8,6 +8,9 @@ from geometry_msgs.msg import PoseStamped, Point, Quaternion
 from tf_transformations import quaternion_from_euler, euler_from_quaternion, euler_matrix, euler_from_matrix
 import numpy as np
 import time
+from moveit_msgs.srv import GetPositionFK
+from moveit_msgs.msg import RobotState
+from sensor_msgs.msg import JointState
 
 def create_transformation_matrix(translation, euler_angles):
     """Create a 4x4 homogeneous transformation matrix."""
@@ -61,7 +64,7 @@ class AR4Robot:
         """Centralized error logging method (always outputs)"""
         self.moveit_client.get_logger().error(message)
         
-    def from_preferred_frame(self, position, euler_angles, old_reference_frame="base_link", new_reference_frame="base_link"):
+    def from_preferred_frame(self, position=None, euler_angles=None, old_reference_frame="base_link", new_reference_frame="base_link"):
         """Convert from preferred reference frame to MoveIt internal frame"""
         if new_reference_frame == old_reference_frame:
             position = np.array([position[0], position[1], position[2], 1.0])
@@ -81,7 +84,7 @@ class AR4Robot:
 
         return transformed_position, transformed_orientation
 
-    def to_preferred_frame(self, position=None, euler_angles=None, new_reference_frame="base_link"):
+    '''def to_preferred_frame(self, position=None, euler_angles=None, new_reference_frame="base_link"):
         """Convert from MoveIt internal frame to preferred reference frame"""
         # Apply transformation matrix
         position_homogeneous = np.array([position[0], position[1], position[2], 1.0])
@@ -104,6 +107,32 @@ class AR4Robot:
             transformed_position = transformed_position - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
         elif new_reference_frame == "base_link":
             transformed_position = transformed_position + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
+
+        return transformed_position, transformed_orientation'''
+    def to_preferred_frame(self, position=None, euler_angles=None, old_reference_frame="base_link", new_reference_frame="base_link"):
+        """Convert from MoveIt internal frame to preferred reference frame"""
+        # Apply transformation matrix to position
+        position_homogeneous = np.array([position[0], position[1], position[2], 1.0])
+        transformed_position = np.dot(self.transformation_matrix, position_homogeneous)[:3]
+        # FIRST: Apply matrix transformation to orientation (inverse of from_preferred_frame step 2)
+        orientation_matrix = euler_matrix(euler_angles[0], euler_angles[1], euler_angles[2], axes='sxyz')[:3, :3]
+        transformed_orientation_matrix = np.dot(self.transformation_matrix[:3, :3], orientation_matrix)
+        transformed_euler = euler_from_matrix(transformed_orientation_matrix, axes='sxyz')
+        
+        # SECOND: Apply angle offsets (inverse of from_preferred_frame step 1)
+        # Note: from_preferred_frame SUBTRACTS offsets, so to_preferred_frame must ADD them
+        # Also note the index mapping: from_preferred_frame maps [0,1,2] -> [1,0,2], so inverse maps [0,1,2] -> [1,0,2]
+        pitch = transformed_euler[1] + self.angle_offsets["pitch"]  # transformed_euler[1] becomes pitch (index 0 in output)
+        roll = transformed_euler[0] + self.angle_offsets["roll"]    # transformed_euler[0] becomes roll (index 1 in output)  
+        yaw = transformed_euler[2] + self.angle_offsets["yaw"]      # transformed_euler[2] becomes yaw (index 2 in output)
+        
+        transformed_orientation = np.array([pitch, roll, yaw])
+        
+        if new_reference_frame != old_reference_frame:
+            if new_reference_frame == "end_effector_link" and old_reference_frame == "base_link":
+                transformed_position = transformed_position - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
+            elif new_reference_frame == "base_link" and old_reference_frame == "end_effector_link":
+                transformed_position = transformed_position + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"]])
             
         return transformed_position, transformed_orientation
     
@@ -520,9 +549,7 @@ class AR4Robot:
                 return None, None
             
             # Create a robot state with the specified joint positions
-            from moveit_msgs.srv import GetPositionFK
-            from moveit_msgs.msg import RobotState
-            from sensor_msgs.msg import JointState
+            
             
             # Create FK service client if it doesn't exist
             if not hasattr(self, '_fk_client'):
@@ -586,7 +613,7 @@ class AR4Robot:
                         self._log_info(f"  Orientation (degrees): [{np.degrees(euler_angles[0]):.1f}°, {np.degrees(euler_angles[1]):.1f}°, {np.degrees(euler_angles[2]):.1f}°]")
                         
 
-                        return pose_preferred
+                        return position_preferred, euler_angles_preferred
                     else:
                         self._log_error("FK service returned empty pose list")
                         return None, None
