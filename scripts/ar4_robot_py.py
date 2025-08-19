@@ -163,102 +163,21 @@ class AR4Robot:
         
         return preferred_position, preferred_orientation
     
-    def print_current_state(self, prefix="Current state", reference_frame="base_link"):
-        """Print the current joint state and pose in preferred reference frame"""
-        # Print joint state
-        joints = self.get_current_joint_state()
-        if joints:
-            self._log_info(f"{prefix} - Joint positions:")
-            for joint, value in joints.items():
-                self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
-        else:
-            self._log_warn("No joint state available")
-            
-        # Print end effector pose in preferred frame
-        position, orientation = self.get_current_pose_preferred_frame(reference_frame)
-        if position is not None and orientation is not None:
-            self._log_info(f"{prefix} - End effector pose in preferred frame ({reference_frame}):")
-            self._log_info(f"  Position: x={position[0]:.3f}, y={position[1]:.3f}, z={position[2]:.3f} m")
-            self._log_info(f"  Orientation (RPY): roll={orientation[0]:.3f} ({np.degrees(orientation[0]):.1f}°), "
-                                 f"pitch={orientation[1]:.3f} ({np.degrees(orientation[1]):.1f}°), "
-                                 f"yaw={orientation[2]:.3f} ({np.degrees(orientation[2]):.1f}°)")
-        else:
-            self._log_warn("Could not get end effector pose in preferred frame")
-    
-    '''def wait_for_movement_complete(self, timeout=1.0):
-        """
-        Wait for robot to stop moving by monitoring joint velocities
-        :param timeout: Maximum time to wait in seconds
-        """
-        start_time = time.time()
-        self._log_info("Waiting for movement to complete...")
-        
-        while time.time() - start_time < timeout:
-            # Check if we have current joint state with velocities
-            if self.moveit_client._current_joint_state is not None:
-                joint_state = self.moveit_client._current_joint_state
-                
-                # Check if velocities are available and near zero
-                if hasattr(joint_state, 'velocity') and len(joint_state.velocity) > 0:
-                    max_velocity = max(abs(v) for v in joint_state.velocity)
-                    if max_velocity < 0.01:  # Velocity threshold for "stopped"
-                        self._log_info("Movement completed (velocities near zero)")
-                        return True
-                
-                # If no velocities available, use position change detection
-                else:
-                    # Store current position
-                    current_positions = [joint_state.position[i] for i in range(len(joint_state.position))]
-                    
-                    # Wait a bit and check again
-                    time.sleep(0.1)
-                    rclpy.spin_once(self.moveit_client, timeout_sec=0.1)
-                    
-                    if self.moveit_client._current_joint_state is not None:
-                        new_positions = [self.moveit_client._current_joint_state.position[i] 
-                                       for i in range(len(self.moveit_client._current_joint_state.position))]
-                        
-                        # Check if positions have stopped changing
-                        max_change = max(abs(new_positions[i] - current_positions[i]) 
-                                       for i in range(min(len(new_positions), len(current_positions))))
-                        
-                        if max_change < 0.001:  # Position change threshold
-                            self._log_info("Movement completed (positions stabilized)")
-                            return True
-            
-            # Spin once to update joint states
-            rclpy.spin_once(self.moveit_client, timeout_sec=0.1)
-            time.sleep(0.1)
-        
-        self._log_warn(f"Movement completion timeout after {timeout} seconds")
-        return False'''
-    
-    def move_to_joint_positions(self, joint_positions, velocity_scaling=None, acceleration_scaling=None):
+    def move_to_joint_positions(self, joint_positions, velocity_scaling=1.0, acceleration_scaling=1.0):
         """
         Move to specific joint positions
         :param joint_positions: Dictionary of joint_name: position (in radians)
         :param velocity_scaling: Optional velocity scaling factor
         :param acceleration_scaling: Optional acceleration scaling factor
         """
-        if velocity_scaling is None:
-            velocity_scaling = self.default_velocity_scaling
-        if acceleration_scaling is None:
-            acceleration_scaling = self.default_acceleration_scaling
-            
-        self._log_info("=== Moving to Joint Positions ===")
-        self.print_current_state("Before movement")
-        
+                    
         success = self.moveit_client.move_to_joint_configuration(
             joint_positions, velocity_scaling, acceleration_scaling
         )
         
-        if success:
-            # Wait for movement to complete instead of fixed time
-            self.print_current_state("After movement")
-        
         return success
     
-    def move_to_joint_degrees(self, joint_positions_deg, velocity_scaling=None, acceleration_scaling=None):
+    '''def move_to_joint_degrees(self, joint_positions_deg, velocity_scaling=None, acceleration_scaling=None):
         """
         Move to specific joint positions specified in degrees
         :param joint_positions_deg: Dictionary of joint_name: position (in degrees)
@@ -268,11 +187,11 @@ class AR4Robot:
         for joint, degrees in joint_positions_deg.items():
             joint_positions_rad[joint] = np.radians(degrees)
         
-        return self.move_to_joint_positions(joint_positions_rad, velocity_scaling, acceleration_scaling)
+        return self.move_to_joint_positions(joint_positions_rad, velocity_scaling, acceleration_scaling)'''
     
     def move_to_pose_preferred_frame(self, position, orientation_euler, 
                                    frame_id="base_link", target_link="link_6",
-                                   velocity_scaling=None, acceleration_scaling=None):
+                                   velocity_scaling=1.0, acceleration_scaling=1.0):
         """
         Move to a specific pose using preferred reference frame
         :param position: [x, y, z] position in preferred frame
@@ -282,65 +201,17 @@ class AR4Robot:
         :param velocity_scaling: Optional velocity scaling factor
         :param acceleration_scaling: Optional acceleration scaling factor
         """
-        if velocity_scaling is None:
-            velocity_scaling = self.default_velocity_scaling
-        if acceleration_scaling is None:
-            acceleration_scaling = self.default_acceleration_scaling
-        
         # Convert from preferred frame to MoveIt internal frame
         moveit_position, moveit_orientation = self.from_preferred_frame(
             position, orientation_euler, frame_id, "base_link"
         )
-        
-        '''# Create pose message for MoveIt
-        target_pose = PoseStamped()
-        target_pose.header.frame_id = "base_link"
-        target_pose.header.stamp = self.moveit_client.get_clock().now().to_msg()
-        
-        # Set position
-        target_pose.pose.position.x = float(moveit_position[0])
-        target_pose.pose.position.y = float(moveit_position[1])
-        target_pose.pose.position.z = float(moveit_position[2])
-        
-        # Convert euler to quaternion
-        quat = quaternion_from_euler(moveit_orientation[0], moveit_orientation[1], moveit_orientation[2])
-        target_pose.pose.orientation.x = float(quat[0])
-        target_pose.pose.orientation.y = float(quat[1])
-        target_pose.pose.orientation.z = float(quat[2])
-        target_pose.pose.orientation.w = float(quat[3])'''
-        
-        
-        
-        self._log_info("=== Moving to Pose (Preferred Frame) ===")
-        self._log_info(f"Target position (preferred frame): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
-        self._log_info(f"Target orientation (preferred frame RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
-        self._log_info(f"Converted to MoveIt position: [{moveit_position[0]:.3f}, {moveit_position[1]:.3f}, {moveit_position[2]:.3f}]")
-        self._log_info(f"Converted to MoveIt orientation: [{moveit_orientation[0]:.3f}, {moveit_orientation[1]:.3f}, {moveit_orientation[2]:.3f}] rad")
-        
-        self.print_current_state("Before movement")
-        
-        '''success = self.moveit_client.move_to_pose(
-            position=moveit_position, orientation_euler=moveit_orientation, target_link=target_link, velocity_scaling=velocity_scaling, acceleration_scaling=acceleration_scaling
-        )
-        
-        if success:
-            # Wait for movement to complete instead of fixed time
-            self.wait_for_movement_complete()
-            
-            # Debug: Check what pose was actually achieved
-            actual_pose = self.moveit_client.get_end_effector_pose("link_6")
-            if actual_pose:
-                actual_quat = actual_pose.pose.orientation
-                actual_euler = euler_from_quaternion([actual_quat.x, actual_quat.y, actual_quat.z, actual_quat.w])
-            
-            self.print_current_state("After movement")'''
         success = self.move_to_pose(position=moveit_position, orientation_euler=moveit_orientation, 
-                     frame_id=frame_id, target_link=target_link)
-        
+                     frame_id=frame_id, target_link=target_link, velocity_scaling=velocity_scaling, acceleration_scaling=acceleration_scaling)
+
         return success
     
     def move_to_pose(self, position, orientation_euler=None, orientation_quat=None, 
-                     frame_id="base_link", target_link="link_6", velocity_scaling = 1.0,
+                     frame_id="base_link", target_link="link_6", velocity_scaling=1.0,
                      acceleration_scaling = 1.0):
         """
         Move to a specific pose using MoveIt internal frame (original method for compatibility)
@@ -380,37 +251,17 @@ class AR4Robot:
             target_pose.pose.orientation.z = float(quat[2])
             target_pose.pose.orientation.w = float(quat[3])
         else:
-            # Default orientation (identity)
-            target_pose.pose.orientation.w = 1.0
-        
-        self._log_info("=== Moving to Pose (MoveIt Frame) ===")
-        self._log_info(f"Target position: [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
-        if orientation_euler is not None:
-            self._log_info(f"Target orientation (RPY): [{orientation_euler[0]:.3f}, {orientation_euler[1]:.3f}, {orientation_euler[2]:.3f}] rad")
-        
-        self.print_current_state("Before movement")
+            self._log_warn("No orientation provided")
+            return False
         
         success = self.moveit_client.move_to_pose(
             target_pose, target_link, velocity_scaling, acceleration_scaling
         )
-        
-        if success:
-            # Wait for movement to complete instead of fixed time
-            self.print_current_state("After movement")
-        
         return success
     
     def move_to_home(self):
         """Move to home position (all joints at 0)"""
-        home_position = {
-            'joint_1': 0.0,
-            'joint_2': 0.0,
-            'joint_3': 0.0,
-            'joint_4': 0.0,
-            'joint_5': 0.0,
-            'joint_6': 0.0
-        }
-        self._log_info("=== Moving to Home Position ===")
+        home_position = np.zeros(6)
         return self.move_to_joint_positions(home_position)
     
     def enable_logging(self):
@@ -425,12 +276,6 @@ class AR4Robot:
             self.moveit_client.get_logger().info("Logging disabled")
         self.logging_enabled = False
         self.moveit_client.logging_enabled = False
-    
-
-    '''def wait(self, seconds):
-        """Wait for specified number of seconds (kept for manual delays if needed)"""
-        self._log_info(f"Waiting {seconds} seconds...")
-        time.sleep(seconds)'''
     
     def shutdown(self):
         """Shutdown the robot interface"""
@@ -554,10 +399,7 @@ class AR4Robot:
             else:
                 self._log_error("joint_positions must be dict or numpy array")
                 return None, None
-            
-            # Create a robot state with the specified joint positions
-            
-            
+
             # Create FK service client if it doesn't exist
             if not hasattr(self, '_fk_client'):
                 self._fk_client = self.moveit_client.create_client(
@@ -613,12 +455,6 @@ class AR4Robot:
                         position_preferred, euler_angles_preferred = self.to_preferred_frame(
                             position=position, euler_angles=euler_angles, new_reference_frame=frame_id
                         )
-                        
-                        self._log_info(f"FK solution for {target_link}:")
-                        self._log_info(f"  Position ({frame_id}): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}] m")
-                        self._log_info(f"  Orientation ({frame_id} RPY): [{euler_angles[0]:.3f}, {euler_angles[1]:.3f}, {euler_angles[2]:.3f}] rad")
-                        self._log_info(f"  Orientation (degrees): [{np.degrees(euler_angles[0]):.1f}°, {np.degrees(euler_angles[1]):.1f}°, {np.degrees(euler_angles[2]):.1f}°]")
-                        
 
                         return position_preferred, euler_angles_preferred
                     else:
@@ -662,8 +498,6 @@ class AR4Robot:
             )
         quat_xyzw = np.array([float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])])
 
-        
-        # Call MoveIt's IK service directly
         joint_state = self._call_ik_service(
             position=transformed_position,
             quat_xyzw=quat_xyzw,
@@ -696,7 +530,6 @@ class AR4Robot:
         return joint_array
 
     
-
 def main():
     """Example usage of the AR4Robot class with movement completion detection"""
     try:

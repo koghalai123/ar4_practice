@@ -53,14 +53,10 @@ class MoveItActionClient(Node):
         if not self._action_client.wait_for_server(timeout_sec=10.0):
             self.get_logger().error("move_group action server not available!")
             raise RuntimeError("move_group action server not available!")
-        
-        self._log_info("Connected to move_group action server")
-        
+                
         # Group name - this should match your SRDF
         self.group_name = "ar_manipulator"
         
-        # Wait for joint states
-        self._log_info("Waiting for joint states...")
         while self._current_joint_state is None and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
         self._log_info("Joint states received")
@@ -137,39 +133,7 @@ class MoveItActionClient(Node):
             
         return None
 
-    def print_robot_state(self, prefix="Robot state", link_name="link_6"):
-        """Print both joint positions and end effector pose"""
-        # Print joint positions
-        joints = self.get_current_joint_values()
-        if joints:
-            self._log_info(f"{prefix} - Joint positions:")
-            for joint, value in joints.items():
-                self._log_info(f"  {joint}: {value:.3f} rad ({np.degrees(value):.1f}°)")
-        else:
-            self._log_warn("No joint state available")
-            
-        # Print end effector pose
-        pose = self.get_end_effector_pose(link_name)
-        if pose:
-            pos = pose.pose.position
-            orient = pose.pose.orientation
-            
-            # Convert quaternion to euler angles
-            quat = [orient.x, orient.y, orient.z, orient.w]
-            roll, pitch, yaw = euler_from_quaternion(quat)
-            
-            self._log_info(f"{prefix} - End effector pose ({link_name}):")
-            self._log_info(f"  Position: x={pos.x:.3f}, y={pos.y:.3f}, z={pos.z:.3f} m")
-            self._log_info(f"  Orientation (RPY): roll={roll:.3f} ({np.degrees(roll):.1f}°), "
-                                 f"pitch={pitch:.3f} ({np.degrees(pitch):.1f}°), "
-                                 f"yaw={yaw:.3f} ({np.degrees(yaw):.1f}°)")
-            self._log_info(f"  Orientation (Quat): x={orient.x:.3f}, y={orient.y:.3f}, "
-                                 f"z={orient.z:.3f}, w={orient.w:.3f}")
-        else:
-            self._log_warn("Could not get end effector pose")
-
-        
-    def reset_planning_scene(self):
+    '''def reset_planning_scene(self):
         """Reset the planning scene to clear any cached states"""
         try:
             if self._planning_scene_client.wait_for_service(timeout_sec=2.0):
@@ -181,7 +145,7 @@ class MoveItActionClient(Node):
             else:
                 self._log_warn("Planning scene service not available")
         except Exception as e:
-            self._log_warn(f"Could not reset planning scene: {e}")
+            self._log_warn(f"Could not reset planning scene: {e}")'''
 
     def move_to_joint_configuration(self, joint_positions, velocity_scaling=1.0, acceleration_scaling=1.0):
         """
@@ -247,14 +211,6 @@ class MoveItActionClient(Node):
             req.allowed_planning_time = 10.0
             
             req.planner_id = "PTP"
-            
-            '''# Set start state to current state
-            if self._current_joint_state:
-                start_state = RobotState()
-                start_state.joint_state = self._current_joint_state
-                req.start_state = start_state'''
-            
-            
             
 
             # Set joint constraints
