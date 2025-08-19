@@ -13,6 +13,10 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
+''' may need this command to install the correct version of numpy and opencv
+pip uninstall opencv-python opencv-contrib-python numpy
+pip install numpy==1.26.4 opencv-python==4.6.0.66 opencv-contrib-python==4.6.0.66
+'''
 class ArucoDetector(Node):
     def __init__(self):
         super().__init__('aruco_detector')

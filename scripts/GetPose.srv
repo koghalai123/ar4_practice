@@ -1,4 +1,0 @@
-# Request (empty if no input needed)
----
-# Response
-geometry_msgs/Pose current_pose
