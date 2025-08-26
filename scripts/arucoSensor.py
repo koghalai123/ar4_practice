@@ -38,13 +38,20 @@ class ArucoDetector(Node):
         self.marker_size = 0.05  # 5cm
         
         # Create subscribers and publishers
-        self.image_sub = self.create_subscription(
+        # on the d415i use this
+        '''self.image_sub = self.create_subscription(
             Image,
             '/camera/camera/color/image_raw',  # for D435i
             # '/camera/camera/color/image_rect_raw' #for d405
             self.image_callback,
+            10)'''
+        #on the d405 use this:
+        self.image_sub = self.create_subscription(
+            Image,
+            '/camera/camera/color/image_rect_raw',  # for D435i
+            # '/camera/camera/color/image_rect_raw' #for d405
+            self.image_callback,
             10)
-        
         self.pose_pub = self.create_publisher(
             PoseStamped,
             '/aruco_marker_pose',
@@ -137,13 +144,8 @@ class ArucoDetector(Node):
 def main(args=None):
     rclpy.init(args=args)
     aruco_detector = ArucoDetector()
-    
-    try:
-        rclpy.spin(aruco_detector)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        aruco_detector.shutdown()
+    rclpy.spin(aruco_detector)
+    print("created aruco detector")
 
 if __name__ == '__main__':
     main()

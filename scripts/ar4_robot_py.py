@@ -18,10 +18,10 @@ def create_transformation_matrix(translation, euler_angles):
     transform[:3, 3] = translation
     return transform
 
-class AR4Robot:
+class AR4Robot(Node):
     def __init__(self):
         """Initialize the AR4 Robot interface"""
-        rclpy.init()
+        
         
         # Logging control (enabled by default)
         self.logging_enabled = True

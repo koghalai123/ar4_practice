@@ -272,11 +272,6 @@ class MoveItActionClient(Node):
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
                 self._log_info("Movement completed successfully!")
-                
-                
-                # Print final state
-                self.print_robot_state("Final state after movement")
-                
                 return True
             else:
                 error_code = result.result.error_code.val if result else "Unknown"
@@ -296,10 +291,6 @@ class MoveItActionClient(Node):
         :param acceleration_scaling: Acceleration scaling factor (0.0 to 1.0)
         """
         try:
-            # Print current state before movement
-            self.print_robot_state("Current state before pose movement", target_link)
-            
-            # Print target pose
             pos = target_pose.pose.position
             orient = target_pose.pose.orientation
             quat = [orient.x, orient.y, orient.z, orient.w]
@@ -406,10 +397,6 @@ class MoveItActionClient(Node):
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
                 self._log_info("Movement completed successfully!")
-                
-                # Print final state
-                self.print_robot_state("Final state after pose movement", target_link)
-                
                 return True
             else:
                 error_code = result.result.error_code.val if result else "Unknown"
@@ -427,9 +414,6 @@ def main(args=None):
     moveit_client = MoveItActionClient()
     
     try:
-        # Print initial state
-        moveit_client.print_robot_state("Initial robot state")
-        
         # Multiple sequential movements
         movements = [
             {
