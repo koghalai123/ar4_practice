@@ -136,7 +136,7 @@ def main(args=None):
     
     # Create a minimal node for querying topics
     query_node = Node('aruco_query_node')
-    aruco_msg = query_aruco_pose(query_node)
+    
     frame = "end_effector_link"
     robot = AR4Robot()
     
@@ -164,7 +164,7 @@ def main(args=None):
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
                 
                 
-                
+                aruco_msg = query_aruco_pose(query_node)
                 # Define target position (same as simulator's target)
                 if simulator.camera_mode:
                     targetPosActual = np.array([0.3,0,0])
