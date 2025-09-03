@@ -106,18 +106,22 @@ def query_aruco_pose(node):
         msg_received[0] = msg
     sub = node.create_subscription(PoseStamped, '/aruco_marker/raw_pose', callback, 1)
     
-    # Spin for a short time to get the message
-    timeout = 2  # seconds
+    # Spin for up to 1 second to get the message
+    timeout = 1.0  # seconds
     start_time = time.time()
     
     while msg_received[0] is None and (time.time() - start_time) < timeout:
-        rclpy.spin_once(node)
-    
+        rclpy.spin_once(node, timeout_sec=0.01)
+
     # Clean up subscription
+
     node.destroy_subscription(sub)
     
+    if msg_received[0] is None:
+        return None
     msg = msg_received[0]
     # Extract position
+    
     position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
     
     # Convert quaternion to euler angles
@@ -158,13 +162,13 @@ def main(args=None):
         # Generate individual measurements
         for i in range(simulator.n):
             counter = 0
-            motionSucceeded = False
-            while motionSucceeded is False:
+            successfulMeasurement = False
+            while successfulMeasurement is False:
                 # Generate random end-effector position pointing toward target
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
                 
                 
-                aruco_msg = query_aruco_pose(query_node)
+                
                 # Define target position (same as simulator's target)
                 if simulator.camera_mode:
                     targetPosActual = np.array([0.3,0,0])
@@ -182,7 +186,7 @@ def main(args=None):
                                                          vectorToTarget[1], 
                                                          vectorToTarget[2],
                                                          )
-                
+                yaw = np.pi/2
                 # Generate measurement using the simulator's proper interface
                 #pos_desired, orient_desired = robot.from_preferred_frame(position=globalEndEffectorPos, euler_angles=np.array([roll,pitch,yaw]),old_reference_frame="base_link", new_reference_frame="base_link")
                 pose_desired = np.concatenate((globalEndEffectorPos, np.array([roll,pitch,yaw])))
@@ -193,42 +197,28 @@ def main(args=None):
                 robot.warn_enabled = True
                 if pose_actual is None:
                     continue
-
-
-                # Transform poses to robot's coordinate frame
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
-                    targetPosActual, targetOrientActual, 
-                    old_reference_frame="base_link", new_reference_frame="base_link")
                 
-                
-                '''endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
-                    globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                    old_reference_frame="base_link", new_reference_frame="base_link")'''
-                
-                
-                
-
-                '''# Move robot to desired pose
-                position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
-                euler_angles = [roll, pitch, yaw]'''
-                
-                #euler_angles = np.array([0, 0, 0])
-                #motionSucceeded = robot.move_to_pose_preferred_frame(pose_actual[:3], pose_actual[3:], frame)
-                # Visualize target and camera-to-target vector
-                marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
-                marker_publisher.publish_arrow_between_points(
-                start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
-                end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
-                thickness=0.01,
-                id=1,
-                color=np.array([0.0, 1.0, 0.0])
-                )
-                #marker_publisher.publish_arrow(position=pose_actual[:3], orientation=pose_actual[3:], 
-                #  length=0.2, thickness=0.02, id=0, color=np.array([0.0, 1.0, 0.0]))
-                
-                motionSucceeded = robot.move_to_joint_positions(joint_positions_actual)
+                joint_positions_commanded_altered = joint_positions_commanded.copy()
+                joint_positions_commanded_altered[4] -= np.pi/2
+                motionSucceeded = robot.move_to_joint_positions(joint_positions_commanded_altered)
                 if motionSucceeded:
-                    
+                    arucoSensedPose = query_aruco_pose(query_node)
+                    if arucoSensedPose is None:
+                        continue
+                    simulator.camera_to_target_actual = arucoSensedPose
+                    # Transform poses to robot's coordinate frame
+                    targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
+                        targetPosActual, targetOrientActual, 
+                        old_reference_frame="base_link", new_reference_frame="base_link")
+                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
+                    marker_publisher.publish_arrow_between_points(
+                    start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
+                    end=np.array([targetPosWeirdFrame[0], targetPosWeirdFrame[1], targetPosWeirdFrame[2]]),
+                    thickness=0.01,
+                    id=1,
+                    color=np.array([0.0, 1.0, 0.0])
+                    )
+                    successfulMeasurement = True
                     break
                 counter += 1
 
@@ -246,12 +236,13 @@ def main(args=None):
                 
             simulator.current_sample += 1  
             print(f"Measurement {i}: Generated successfully")
-            time.sleep(0.01)
 
         # Process all measurements for this iteration using the correct target arrays
+        # the order of the measured and expected is off here compared to other examples
+        # still need to debug what makes this work
         results = simulator.process_iteration_results(
-                simulator.targetPoseMeasured, 
                 simulator.targetPoseExpected,
+                simulator.targetPoseMeasured,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
         

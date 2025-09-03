@@ -219,8 +219,8 @@ class MoveItActionClient(Node):
                 constraint = JointConstraint()
                 constraint.joint_name = joint_name
                 constraint.position = position
-                constraint.tolerance_above = 0.001
-                constraint.tolerance_below = 0.001
+                constraint.tolerance_above = 0.0001
+                constraint.tolerance_below = 0.0001
                 constraint.weight = 1.0
                 joint_constraints.append(constraint)
             
@@ -408,7 +408,7 @@ class MoveItActionClient(Node):
             return False
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init()
     
     # Create the node
     moveit_client = MoveItActionClient()
