@@ -42,8 +42,8 @@ def load_faces(filepath):
 
 
 package_dir = os.path.dirname(os.path.abspath(__file__))
-vertices_path = os.path.join(package_dir, 'vertices.csv')
-faces_path = os.path.join(package_dir, 'faces.csv')
+vertices_path = os.path.join(package_dir, 'vertices_correct.csv')
+faces_path = os.path.join(package_dir, 'faces_correct.csv')
 
 vertices = load_vertices(vertices_path)
 faces = load_faces(faces_path)

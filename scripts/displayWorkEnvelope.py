@@ -22,6 +22,14 @@ import alphashape
 from descartes import PolygonPatch
 from stl import mesh
 
+import rclpy
+from rclpy.node import Node
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
+from std_msgs.msg import ColorRGBA
+import threading
+import time
+
 
 
 def load_multiple_files(input_files):
@@ -211,13 +219,234 @@ def visualize_alpha_shape(points, labels, alpha=0.5):
     # Plot the results
     plot_smoothed_mesh(vertices, faces)
 
+class WorkEnvelopePublisher(Node):
+    def __init__(self):
+        super().__init__('work_envelope_publisher')
+        self.marker_pub = self.create_publisher(Marker, '/work_envelope_mesh', 10)
+        self.points_pub = self.create_publisher(MarkerArray, '/work_envelope_points', 10)
+        self.timer = self.create_timer(1.0, self.publish_markers)  # Publish every second
+        
+        # Storage for mesh data
+        self.mesh_vertices = None
+        self.mesh_faces = None
+        self.reachable_points = None
+        self.unreachable_points = None
+        
+        self.get_logger().info("Work Envelope Publisher initialized")
 
+    def set_mesh_data(self, vertices, faces):
+        """Set the mesh data for publishing"""
+        self.mesh_vertices = vertices
+        self.mesh_faces = faces
+
+    def set_point_data(self, reachable_points, unreachable_points):
+        """Set the point cloud data for publishing"""
+        self.reachable_points = reachable_points
+        self.unreachable_points = unreachable_points
+
+    def publish_markers(self):
+        """Publish mesh and point markers to RViz2"""
+        # Publish mesh as triangle list
+        if self.mesh_vertices is not None and self.mesh_faces is not None:
+            self.publish_mesh_marker()
+        
+        # Publish points
+        if self.reachable_points is not None:
+            self.publish_point_markers()
+
+    def publish_mesh_marker(self):
+        """Publish the work envelope mesh as a triangle list marker"""
+        marker = Marker()
+        marker.header.frame_id = "base_link"  # Change to your robot's base frame
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "work_envelope"
+        marker.id = 0
+        marker.type = Marker.TRIANGLE_LIST
+        marker.action = Marker.ADD
+        
+        # Set pose (identity)
+        marker.pose.orientation.w = 1.0
+        
+        # Set scale
+        marker.scale.x = 1.0
+        marker.scale.y = 1.0
+        marker.scale.z = 1.0
+        
+        # Set color (semi-transparent blue)
+        marker.color.r = 0.1
+        marker.color.g = 0.5
+        marker.color.b = 0.8
+        marker.color.a = 0.3  # 30% transparent
+        
+        # Add triangle vertices
+        for face in self.mesh_faces:
+            for vertex_idx in face:
+                point = Point()
+                point.x = float(self.mesh_vertices[vertex_idx][0])
+                point.y = float(self.mesh_vertices[vertex_idx][1])
+                point.z = float(self.mesh_vertices[vertex_idx][2])
+                marker.points.append(point)
+        
+        self.marker_pub.publish(marker)
+
+    def publish_point_markers(self):
+        """Publish reachable and unreachable points as point clouds"""
+        marker_array = MarkerArray()
+        
+        # Reachable points marker
+        if self.reachable_points is not None and len(self.reachable_points) > 0:
+            reachable_marker = Marker()
+            reachable_marker.header.frame_id = "base_link"
+            reachable_marker.header.stamp = self.get_clock().now().to_msg()
+            reachable_marker.ns = "reachable_points"
+            reachable_marker.id = 1
+            reachable_marker.type = Marker.POINTS
+            reachable_marker.action = Marker.ADD
+            
+            reachable_marker.pose.orientation.w = 1.0
+            reachable_marker.scale.x = 0.02  # Point size
+            reachable_marker.scale.y = 0.02
+            
+            # Green color for reachable points
+            reachable_marker.color.r = 0.0
+            reachable_marker.color.g = 1.0
+            reachable_marker.color.b = 0.0
+            reachable_marker.color.a = 0.8
+            
+            # Add points
+            for point_data in self.reachable_points:
+                point = Point()
+                point.x = float(point_data[0])
+                point.y = float(point_data[1])
+                point.z = float(point_data[2])
+                reachable_marker.points.append(point)
+            
+            marker_array.markers.append(reachable_marker)
+        
+        # Unreachable points marker (optional - might be too many points)
+        if self.unreachable_points is not None and len(self.unreachable_points) > 0:
+            # Sample unreachable points to avoid overwhelming RViz
+            sample_size = min(1000, len(self.unreachable_points))
+            sampled_unreachable = self.unreachable_points[
+                np.random.choice(len(self.unreachable_points), sample_size, replace=False)
+            ]
+            
+            unreachable_marker = Marker()
+            unreachable_marker.header.frame_id = "base_link"
+            unreachable_marker.header.stamp = self.get_clock().now().to_msg()
+            unreachable_marker.ns = "unreachable_points"
+            unreachable_marker.id = 2
+            unreachable_marker.type = Marker.POINTS
+            unreachable_marker.action = Marker.ADD
+            
+            unreachable_marker.pose.orientation.w = 1.0
+            unreachable_marker.scale.x = 0.015  # Slightly smaller
+            unreachable_marker.scale.y = 0.015
+            
+            # Red color for unreachable points
+            unreachable_marker.color.r = 1.0
+            unreachable_marker.color.g = 0.0
+            unreachable_marker.color.b = 0.0
+            unreachable_marker.color.a = 0.5
+            
+            # Add sampled points
+            for point_data in sampled_unreachable:
+                point = Point()
+                point.x = float(point_data[0])
+                point.y = float(point_data[1])
+                point.z = float(point_data[2])
+                unreachable_marker.points.append(point)
+            
+            marker_array.markers.append(unreachable_marker)
+        
+        self.points_pub.publish(marker_array)
+
+def broadcast_to_rviz(points, labels, mesh_vertices=None, mesh_faces=None):
+    """
+    Broadcast work envelope data to RViz2
+    
+    Args:
+        points: All points (nx3 array)
+        labels: Boolean array indicating reachable points
+        mesh_vertices: Mesh vertices (optional)
+        mesh_faces: Mesh faces (optional)
+    """
+    def run_publisher():
+        rclpy.init()
+        publisher = WorkEnvelopePublisher()
+        
+        # Separate reachable and unreachable points
+        reachable_points = points[labels]
+        unreachable_points = points[~labels]
+        
+        # Set data
+        publisher.set_point_data(reachable_points, unreachable_points)
+        if mesh_vertices is not None and mesh_faces is not None:
+            publisher.set_mesh_data(mesh_vertices, mesh_faces)
+        
+        publisher.get_logger().info(f"Broadcasting {len(reachable_points)} reachable points and {len(unreachable_points)} unreachable points")
+        if mesh_vertices is not None:
+            publisher.get_logger().info(f"Broadcasting mesh with {len(mesh_vertices)} vertices and {len(mesh_faces)} faces")
+        
+        try:
+            rclpy.spin(publisher)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            publisher.destroy_node()
+            rclpy.shutdown()
+    
+    # Run in separate thread to not block the main visualization
+    publisher_thread = threading.Thread(target=run_publisher, daemon=True)
+    publisher_thread.start()
+    
+    print("Work envelope data is being broadcast to RViz2")
+    print("Topics available:")
+    print("  - /work_envelope_mesh (Marker)")
+    print("  - /work_envelope_points (MarkerArray)")
+    print("Add these to RViz2 to visualize the work envelope")
+    
+    return publisher_thread
+
+    # Modified poisson_reconstruction function to broadcast data
+def poisson_reconstruction_with_rviz(points, labels, alpha):
+    """Perform Poisson surface reconstruction and broadcast to RViz2."""
+    reachable = points[labels]
+    unreachable = points[~labels]
+    alpha_shape = alphashape.alphashape(reachable, alpha)
+    vertices = np.array(alpha_shape.vertices)
+    faces = np.array(alpha_shape.faces)    
+    
+    pcd = o3d.geometry.TriangleMesh()
+    pcd.vertices = o3d.utility.Vector3dVector(vertices)
+    pcd.triangles = o3d.utility.Vector3iVector(faces)
+    
+    pcd = pcd.sample_points_poisson_disk(5000)
+    pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))
+    pcd.estimate_normals()
+    pcd.orient_normals_consistent_tangent_plane(100)
+
+    with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
+        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=9)
+    
+    mesh.compute_vertex_normals()
+    print(mesh)
+    
+    # Get mesh data for RViz
+    mesh_vertices = np.asarray(mesh.vertices)
+    mesh_faces = np.asarray(mesh.triangles)
+    
+    # Broadcast to RViz2
+    broadcast_thread = broadcast_to_rviz(points, labels, mesh_vertices, mesh_faces)
+    
+    # Show in Open3D as well
+    o3d.visualization.draw_geometries([mesh])
+    
+    return mesh, broadcast_thread
 
     
 if __name__ == "__main__":
     import sys
-    
-
     
     input_files = [
         'results0_2.csv',
@@ -238,8 +467,12 @@ if __name__ == "__main__":
     points, labels = load_multiple_files(input_files)
     print(f"Total points loaded: {len(points)} (Reachable: {sum(labels)}, Unreachable: {sum(labels==0)})")
     #visualize_convex_surface(points, labels)
-    #visualize_alpha_shape(points, labels,alpha=8.1)
+    visualize_alpha_shape(points, labels,alpha=8.1)
     #visualize_bpa_mesh(points, labels, radii=[0.05, 0.1])
-    poisson_reconstruction(points,alpha=10.1)
-    print('done')
+    #poisson_reconstruction(points,alpha=10.1)
+    #print('done')
     #visualize_poisson_surface(points, labels)
+    #mesh, broadcast_thread = poisson_reconstruction_with_rviz(points, labels, alpha=10.1)
+
+
+    

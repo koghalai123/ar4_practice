@@ -7,7 +7,6 @@ import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion
-
 from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import (
     AllowedCollisionEntry,
@@ -19,7 +18,6 @@ from moveit_msgs.msg import (
     OrientationConstraint,
     PlanningScene,
     PositionConstraint,
-    RobotState, 
 )
 from moveit_msgs.srv import (
     ApplyPlanningScene,
@@ -154,7 +152,11 @@ class MoveIt2:
         self.motion_suceeded = False
         self.__execution_goal_handle = None
         self.__last_error_code = None
+        self.__wait_until_executed_rate = self._node.create_rate(1000.0)
         self.__execution_mutex = threading.Lock()
+
+        # Event that enables waiting until async future is done
+        self.__future_done_event = threading.Event()
 
         # Create subscriber for current joint states
         self._node.create_subscription(
@@ -525,6 +527,8 @@ class MoveIt2:
         if future is None:
             return None
 
+        # 100ms sleep
+        rate = self._node.create_rate(10)
         while not future.done():
             rclpy.spin_once(self._node, timeout_sec=1.0)
 
@@ -641,8 +645,6 @@ class MoveIt2:
                 rclpy.spin_once(self._node, timeout_sec=1.0)
         self._node._logger.info(message="Joint states are available now")
 
-        
-
         # Plan trajectory asynchronously by service call
         if cartesian:
             future = self._plan_cartesian_path(
@@ -753,8 +755,7 @@ class MoveIt2:
         return self.motion_suceeded
 
     def reset_controller(
-        self,
-        joint_state: Union[JointState, List[float]],
+        self, joint_state: Union[JointState, List[float]], sync: bool = True
     ):
         """
         Reset controller to a given `joint_state` by sending a dummy joint trajectory.
@@ -771,7 +772,10 @@ class MoveIt2:
             joint_trajectory=joint_trajectory
         )
 
-        self._send_goal_async_execute_trajectory(goal=execute_trajectory_goal)
+        self._send_goal_async_execute_trajectory(
+            goal=execute_trajectory_goal,
+            wait_until_response=sync,
+        )
 
     def set_pose_goal(
         self,
@@ -1189,6 +1193,8 @@ class MoveIt2:
         if future is None:
             return None
 
+        # 100ms sleep
+        rate = self._node.create_rate(10)
         while not future.done():
             rclpy.spin_once(self._node, timeout_sec=1.0)
 
@@ -1281,6 +1287,8 @@ class MoveIt2:
         if future is None:
             return None
 
+        # 10ms sleep
+        rate = self._node.create_rate(10)
         while not future.done():
             rclpy.spin_once(self._node, timeout_sec=1.0)
 
@@ -1977,17 +1985,6 @@ class MoveIt2:
                 f"Service '{self._plan_kinematic_path_service.srv_name}' is not yet available. Better luck next time!"
             )
             return None
-        
-        # The start_joint_state variable has the correct JointState data
-        start_joint_state = self.__joint_state
-        start_joint_state.effort = [0.0] * len(start_joint_state.position)
-        
-        robot_start_state = RobotState()
-        robot_start_state.joint_state = start_joint_state
-        # Assign this RobotState to the motion plan request
-        self.__kinematic_path_request.motion_plan_request.start_state = robot_start_state
-        self._node.get_logger().info("Sending GetMotionPlan request...")
-        self._node.get_logger().info(f"Request: {self.__kinematic_path_request.motion_plan_request}")
 
         return self._plan_kinematic_path_service.call_async(
             self.__kinematic_path_request
@@ -2126,6 +2123,7 @@ class MoveIt2:
     def _send_goal_async_execute_trajectory(
         self,
         goal: ExecuteTrajectory,
+        wait_until_response: bool = False,
     ):
         self.__execution_mutex.acquire()
 
@@ -2168,6 +2166,9 @@ class MoveIt2:
             self.__result_callback_execute_trajectory
         )
         self.__execution_mutex.release()
+
+    def __response_callback_with_event_set_execute_trajectory(self, response):
+        self.__future_done_event.set()
 
     def __result_callback_execute_trajectory(self, res):
         self.__execution_mutex.acquire()
