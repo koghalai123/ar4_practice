@@ -114,9 +114,19 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
-                                               dQMagnitude=0.0, dLMagnitude=0.0, 
-                                               dXMagnitude=0.1, camera_mode=True)
-    
+                                               dQMagnitude=0.1, dLMagnitude=0.0, 
+                                               dXMagnitude=0.0, camera_mode=True)
+    if simulator.camera_mode:
+        simulator.targetPosNom = np.array([0.3,0,0])
+        simulator.targetOrientNom = np.array([0.0,0,0])
+        simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
+        simulator.dX[5]=0
+        simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
+    else:
+        simulator.targetPosEst = np.array([0.0,0,0])
+        simulator.targetOrientEst = np.array([0,0,0])
+        simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
+        simulator.targetOrientActual = simulator.targetOrientNom
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
@@ -129,18 +139,6 @@ def main(args=None):
             while motionSucceeded is False:
                 # Generate random end-effector position pointing toward target
                 relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
-                
-                # Define target position (same as simulator's target)
-                if simulator.camera_mode:
-                    simulator.targetPosNom = np.array([0.3,0,0])
-                    simulator.targetOrientNom = np.array([0,0,0])
-                    simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
-                    simulator.targetOrientActual = simulator.targetOrientNom
-                else:
-                    simulator.targetPosEst = np.array([0.0,0,0])
-                    simulator.targetOrientEst = np.array([0,0,0])
-                    simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
-                    simulator.targetOrientActual = simulator.targetOrientNom
 
                 globalEndEffectorPos = relativeToHomePos + globalHomePos
                 
@@ -156,7 +154,6 @@ def main(args=None):
                 pose_desired = np.concatenate((globalEndEffectorPos, np.array([roll,pitch,yaw])))
                 robot.warn_enabled = False
                 
-                simulator.PhysicalCameraMeasurement = np.zeros(6)
                 pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
                     robot=robot, pose=pose_desired, calibrate=True, frame="base_link"
                 )
@@ -168,32 +165,24 @@ def main(args=None):
                 # Transform poses to robot's coordinate frame
                 targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
                     simulator.targetPosActual, simulator.targetOrientActual, 
-                    old_reference_frame="base_link", new_reference_frame="base_link")
+                    old_reference_frame="base_link", new_reference_frame="global")
                 targetPosWeirdFrameEst, targetOrientWeirdFrameEst = robot.from_preferred_frame(
                     simulator.targetPosEst, simulator.targetOrientEst, 
-                    old_reference_frame="base_link", new_reference_frame="base_link")
+                    old_reference_frame="base_link", new_reference_frame="global")
                 endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
                     globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                    old_reference_frame="base_link", new_reference_frame="base_link")
+                    old_reference_frame="base_link", new_reference_frame="global")
                 
-                
-                
-
-                '''# Move robot to desired pose
-                position = np.array([relativeToHomePos[0], relativeToHomePos[1], relativeToHomePos[2]])
-                euler_angles = [roll, pitch, yaw]'''
-                #euler_angles = np.array([0, 0, 0])
-                #motionSucceeded = robot.move_to_pose_preferred_frame(pose_actual[:3], pose_actual[3:], frame)
-                # Visualize target and camera-to-target vector
-                
-                #marker_publisher.publish_arrow(position=pose_actual[:3], orientation=pose_actual[3:], 
-                #  length=0.2, thickness=0.02, id=0, color=np.array([0.0, 1.0, 0.0]))
-                #joint_positions_actual[5]=0
                 motionSucceeded = robot.move_to_joint_positions(joint_positions_actual)
                 
                 
                 if motionSucceeded:
-                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame)
+                    
+                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
+                                                  color = np.array([0.2, 0.8, 0.2])
+                                                  , euler=  targetOrientWeirdFrameEst)
+                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame, id=0
+                                                  , euler=  targetOrientWeirdFrame)
                     marker_publisher.publish_arrow_between_points(
                     start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
                     end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
@@ -222,6 +211,7 @@ def main(args=None):
         # Process all measurements for this iteration using the correct target arrays
         # the order of the measured and expected is off here compared to other examples
         # still need to debug what makes this work
+        
         results = simulator.process_iteration_results(
                 simulator.targetPoseExpected,
                 simulator.targetPoseMeasured,

@@ -4,6 +4,8 @@ from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Quaternion, Point
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
+from scipy.spatial.transform import Rotation as R
+import rclpy
 
 
 
@@ -18,13 +20,14 @@ class SurfacePublisher(Node):
         marker_array.markers.append(self.workPlane)
         marker_array.markers.append(self.sphereList)
         self.marker_pub.publish(marker_array)'''
-    def publishPlane(self, sideLength = 0.5, pos = np.array([0, 0, 0])):
+    def publishPlane(self, sideLength = 0.5, pos = np.array([0, 0, 0]), euler = np.array([0, 0, 0]), id=0, 
+                     color = np.array([0.0, 0.0, 0.0])):
 
         marker = Marker()
         marker.header.frame_id = "base_link"  # Change to your frame
         marker.header.stamp = self.get_clock().now().to_msg()
         marker.ns = "plane"
-        marker.id = 0
+        marker.id = id
         
         marker.type = Marker.TRIANGLE_LIST
         marker.action = Marker.ADD
@@ -42,13 +45,26 @@ class SurfacePublisher(Node):
         cubeSideLength = sideLength
         cubeCenter = pos
 
-        planePoints = 1*np.array([
+        # Create plane points in local coordinates (before rotation)
+        planePoints_local = np.array([
             [-cubeSideLength[0]/2, -cubeSideLength[0]/2, 0],
             [cubeSideLength[0]/2, -cubeSideLength[0]/2, 0],
             [-cubeSideLength[0]/2, cubeSideLength[0]/2, 0],
             [cubeSideLength[0]/2, cubeSideLength[0]/2, 0],
             [0,0,0],
-        ]) + cubeCenter
+        ])
+        
+        # Apply rotation using Euler angles
+        if np.any(euler != 0):
+            # Create rotation matrix from Euler angles (roll, pitch, yaw)
+            rotation = R.from_euler('xyz', euler, degrees=False)
+            # Apply rotation to each point
+            planePoints_rotated = rotation.apply(planePoints_local)
+        else:
+            planePoints_rotated = planePoints_local
+        
+        # Translate to final position
+        planePoints = planePoints_rotated + cubeCenter
         planeFaces  = np.array([
             [0, 1, 2],
             [1, 3, 2],
@@ -62,9 +78,9 @@ class SurfacePublisher(Node):
         
         
         # Set color (RGBA, 0-1)
-        marker.color.r = 0.0
-        marker.color.g = 0.0
-        marker.color.b = 0.0
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
         marker.color.a = 1.0  # Semi-transparent
         
         # Scale (irrelevant for TRIANGLE_LIST, but required)
@@ -79,7 +95,7 @@ class SurfacePublisher(Node):
         sphere_list_marker.header.frame_id = "base_link"
         sphere_list_marker.header.stamp = self.get_clock().now().to_msg()
         sphere_list_marker.ns = "work_envelope"  # Same namespace as others
-        sphere_list_marker.id = 2  # Unique ID
+        sphere_list_marker.id = id  # Unique ID
         sphere_list_marker.type = Marker.SPHERE_LIST
         sphere_list_marker.action = Marker.ADD
 

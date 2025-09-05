@@ -68,18 +68,36 @@ class AR4Robot(Node):
         
     def from_preferred_frame(self, position=None, euler_angles=None, old_reference_frame="base_link", new_reference_frame="base_link"):
         """Convert from preferred reference frame to MoveIt internal frame"""
+        
+        
+        
         if new_reference_frame == old_reference_frame:
             position = np.array([position[0], position[1], position[2], 1.0])
+            roll = euler_angles[1] - self.angle_offsets["pitch"]
+            pitch = euler_angles[0] - self.angle_offsets["roll"]
+            yaw = euler_angles[2] - self.angle_offsets["yaw"]
         elif new_reference_frame == "end_effector_link" and old_reference_frame == "base_link":
-            position = np.array([position[0], position[1], position[2], 1.0]) - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"], 0.0])        
+            position = np.array([position[0], position[1], position[2], 1.0]) - np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"], 0.0])   
+            roll = euler_angles[1] - self.angle_offsets["pitch"]
+            pitch = euler_angles[0] - self.angle_offsets["roll"]
+            yaw = euler_angles[2] - self.angle_offsets["yaw"]     
         elif new_reference_frame == "base_link" and old_reference_frame == "end_effector_link":
-            position = np.array([position[0], position[1], position[2], 1.0]) + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"], 0.0])        
+            position = np.array([position[0], position[1], position[2], 1.0]) + np.array([self.pos_offsets["x"], self.pos_offsets["y"], self.pos_offsets["z"], 0.0])
+            roll = euler_angles[1] - self.angle_offsets["pitch"]
+            pitch = euler_angles[0] - self.angle_offsets["roll"]
+            yaw = euler_angles[2] - self.angle_offsets["yaw"]        
+        elif new_reference_frame == "global" and old_reference_frame == "base_link":
+            position = np.array([position[0], position[1], position[2], 1.0])
+            roll = euler_angles[1]
+            pitch = euler_angles[0]
+            yaw = euler_angles[2]
+        else:
+            print("Warning: Unhandled reference frame conversion in ar4_robot_py.py.")
+            return None, None
 
         transformed_position = (np.dot(self.inverse_transformation_matrix, position)[:3])
         
-        roll = euler_angles[1] - self.angle_offsets["pitch"]
-        pitch = euler_angles[0] - self.angle_offsets["roll"]
-        yaw = euler_angles[2] - self.angle_offsets["yaw"]
+        
         
         transformed_orientation_matrix = np.dot(self.inverse_transformation_matrix[:3, :3], euler_matrix(roll, pitch, yaw, axes='sxyz')[:3, :3])
         transformed_orientation = euler_from_matrix(transformed_orientation_matrix, axes='sxyz')

@@ -344,36 +344,33 @@ class CalibrationConvergenceSimulator:
         
         target_position_world = self.target_position_world
         target_orientation_world = self.target_orientation_world
-        if not self.OnPhysicalRobot:
-            # === ACTUAL MEASUREMENT (with robot errors) ===
-            # Get actual camera pose in world frame (with robot errors)
-            joint_lengths = self.joint_lengths_actual
-            XOffsets = self.XActual.flatten()
-            camera_pose_actual = self.get_fk_calibration_model(
-            joint_positions=joint_positions_actual, 
-            joint_lengths=joint_lengths, 
-            XOffsets=XOffsets,
-            camera_to_target = np.zeros(6)
-            )
-            camera_position_actual = camera_pose_actual[:3]
-            camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
-            
-            T_world_to_camera_actual = np.eye(4)
-            T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
-            T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
-            
-            target_homogeneous = np.append(target_position_world, 1)
-            target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
-            target_position_camera_actual = target_in_camera_actual[:3]
 
-            R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
-            R_target_camera_actual = camera_rotation_actual.T @ R_target_world
-            target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
-            camera_to_target_actual = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
-            self.camera_to_target_actual = camera_to_target_actual
-        else:
-            self.camera_to_target_actual = self.PhysicalCameraMeasurement
+
+        joint_lengths = self.joint_lengths_actual
+        XOffsets = self.XActual.flatten()
+        camera_pose_actual = self.get_fk_calibration_model(
+        joint_positions=joint_positions_actual, 
+        joint_lengths=joint_lengths, 
+        XOffsets=XOffsets,
+        camera_to_target = np.zeros(6)
+        )
+        camera_position_actual = camera_pose_actual[:3]
+        camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
         
+        T_world_to_camera_actual = np.eye(4)
+        T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
+        T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
+        
+        target_homogeneous = np.append(target_position_world, 1)
+        target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
+        target_position_camera_actual = target_in_camera_actual[:3]
+
+        R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
+        R_target_camera_actual = camera_rotation_actual.T @ R_target_world
+        target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
+        camera_to_target_actual = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
+        self.camera_to_target_actual = camera_to_target_actual
+
         joint_lengths_commanded = self.joint_lengths_nominal
         XOffsets_commanded = self.XNominal
         camera_pose_commanded = self.get_fk_calibration_model(
@@ -440,12 +437,13 @@ class CalibrationConvergenceSimulator:
             if self.camera_mode:
                 XOffsets_est = self.XNominal
                 self.targetPosEst = self.targetPosNom + np.sum(self.dXMat, axis=0)[:3]
+                self.targetOrientEst = self.targetOrientNom + np.sum(self.dXMat, axis=0)[3:]
             else:
                 XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
             # Apply current parameter estimates to get expected measurement
             joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
             
-            joint_positions_est = joint_positions_commanded + np.sum(self.dQMat, axis=0)
+            joint_positions_est = joint_positions_commanded - np.sum(self.dQMat, axis=0)
             pose_commanded = self.get_fk_calibration_model(joint_positions_commanded, joint_lengths_est, XOffsets_est)
         
         joint_lengths = self.joint_lengths_actual
@@ -491,19 +489,6 @@ class CalibrationConvergenceSimulator:
         #joint_positions = self.joint_positions_commanded[:num_measurements] #+ noise
         joint_lengths = self.joint_lengths_nominal  # Use nominal values for Jacobian linearization
         XOffsets = self.XNominal  # Use nominal values for Jacobian linearization
-        '''for i in range(num_measurements):
-            XOffsets = self.XNominal + np.sum(self.dXMat, axis=0)
-            partialsTrans = self.jacobian_translation.subs({
-                **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-                **{l[j]: joint_lengths[j] for j in range(6)},
-                **{x[j]: XOffsets[j] for j in range(6)},
-            })   
-            partialsRot = self.jacobian_rotation.subs({
-                **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-                **{l[j]: joint_lengths[j] for j in range(6)},
-                **{x[j]: XOffsets[j] for j in range(6)},
-            })  '''
-            
             
         if self.camera_mode:
             subs_dict = {
@@ -662,18 +647,12 @@ class CalibrationConvergenceSimulator:
         """Process all measurements for the current iteration"""
         j = self.current_iter
 
-            
-        # Compute Jacobians
-        
-        # Compute differences
         translationDifferences, rotationalDifferences = self.compute_differences(measurements_actual, measurements_expected)
         
-        # Compute error metrics
         avgAccuracyError, avgRotationalError, avgTransAndRotError = self.compute_error_metrics(
             translationDifferences, rotationalDifferences)
         self.avgAccMat[j,:] = avgTransAndRotError
         
-        # Compute calibration parameters
         errorEstimates = self.compute_calibration_parameters(
             translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot)
             
@@ -742,44 +721,58 @@ def main(args=None):
     # Create simulator
     rclpy.init()
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.1,
-                 dXMagnitude=0.1, camera_mode=False)
+                dQMagnitude=0.1, dLMagnitude=0.0,
+                 dXMagnitude=0.1, camera_mode=True)
     
+    
+    frame = "end_effector_link"
+
     robot = AR4Robot()
     robot.disable_logging()
     # Process each iteration separately
+    
+    if simulator.camera_mode:
+        simulator.targetPosNom = np.array([0.3,0,0])
+        simulator.targetOrientNom = np.array([0.0,0,0])
+        simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
+        simulator.dX[5]=0
+        simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
+    else:
+        simulator.targetPosEst = np.array([0.0,0,0])
+        simulator.targetOrientEst = np.array([0,0,0])
+        simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
+        simulator.targetOrientActual = simulator.targetOrientNom
+    
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
         simulator.set_current_iteration(j)
-        
-        # Pre-allocate numpy arrays for measurements
-        
-        valid_measurements = 0
-
+                
         # Generate individual measurements
         for i in range(simulator.n):
-            #poseActual, poseCommanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_joints(calibrate=True)
-            simulator.generate_measurement_pose(robot = robot, pose = None, calibrate=True, frame = "end_effector_link")
+            #pose_desired = np.array([ 2.97917633e-01,  1.18078317e-03,  4.61091580e-01, -2.56083746e-03,-1.56628020e+00,  0.00000000e+00])
             
-            
+            #pose_desired = np.array([ 0.37192116, -0.01913936,  0.48370802,  0.03954736, -1.7182883 , 0.        ])
+            pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
+                robot=robot, calibrate=True, frame="base_link"
+            )
             
             if simulator.camera_mode:
-                    numJacobianTrans, numJacobianRot = simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample], 
-                                                                    camera_to_target=simulator.camera_to_target_actual)
+                # Use the actual camera-to-target measurement
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample], 
+                    camera_to_target=simulator.camera_to_target_actual)
             else:
-                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(simulator.joint_positions_commanded[simulator.current_sample])
-            simulator.current_sample += 1  
+                numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
+                    simulator.joint_positions_commanded[simulator.current_sample])
+                
+            simulator.current_sample += 1 
             print(f"Measurement {i}: Generated")
 
-        
-        # Process all measurements for this iteration
-        # the order of the measured and expected is off here compared to other examples
-        # still need to debug what makes this work
-        results = simulator.process_iteration_results(simulator.targetPoseMeasured, 
-                                                      simulator.targetPoseExpected,
-                                                      simulator.numJacobianTrans,
-                                                      simulator.numJacobianRot)
-
+        results = simulator.process_iteration_results(
+                simulator.targetPoseExpected,
+                simulator.targetPoseMeasured,
+                simulator.numJacobianTrans,
+                simulator.numJacobianRot)
     
     # Save results to CSV
     #simulator.save_to_csv()
