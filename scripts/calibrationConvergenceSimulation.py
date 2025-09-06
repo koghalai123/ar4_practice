@@ -49,6 +49,7 @@ class CalibrationConvergenceSimulator:
         self.XNominal = np.zeros((6))
         self.dXMagnitude = dXMagnitude
         self.dX = np.random.uniform(-self.dXMagnitude, self.dXMagnitude, (1,6))[0]
+        #self.dX[3:5]=0
         self.XActual = self.XNominal + self.dX
         
         self.numIters = numIters
@@ -156,14 +157,16 @@ class CalibrationConvergenceSimulator:
         No sign corrections needed because measurement directions are consistent.
         """
         
+        
         self.l = sp.symbols('l1:7')
         self.x = sp.symbols('x1:7')
         self.q = sp.symbols('q_joint_1 q_joint_2 q_joint_3 q_joint_4 q_joint_5 q_joint_6')
         self.camera_measurements = sp.symbols('c1:7')
         
-        self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [0,0,0], rotation_order='XYZ')
-        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='XYZ')
-        
+        #self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [self.x[3], self.x[4], 0], rotation_order='XYZ')
+        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], 0], [0, 0, 0], rotation_order='XYZ')
+        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], self.XActual[3:], rotation_order='XYZ')
+
         for i in range(1, 7):
             key = "Joint" + str(i)
             symbolic_matrix = self.symbolic_matrices[key]
@@ -175,7 +178,7 @@ class CalibrationConvergenceSimulator:
             self.baseToWrist = self.baseToWrist * symbolic_matrix
             self.wristToBase = symbolic_matrix.inv() * self.wristToBase
             self.symbolic_matrices[key] = symbolic_matrix
-
+        
         self.originToWrist = self.originToBase*self.baseToWrist
         
         if self.camera_mode:
@@ -301,8 +304,8 @@ class CalibrationConvergenceSimulator:
         
         return np.concatenate([translation.flatten(), euler_angles])
     
-    def generate_measurement_pose(self, robot, pose = None, calibrate=True, frame = "end_effector_link"):
-        
+    def generate_measurement_pose(self, robot, pose = None, calibrate=True, frame = "end_effector_link", camera_to_target_meas=None):
+
         #FRAME IS IN THE END EFFECTOR LINK FRAME
         acceptRandom = False
         if pose is None:
@@ -317,7 +320,7 @@ class CalibrationConvergenceSimulator:
         if joint_positions_ik is not None or acceptRandom:
             #robot.get_fk(joint_positions_ik)
             if self.camera_mode:
-                pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_ik, calibrate)
+                pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints_camera(joint_positions_ik, calibrate,camera_to_target_meas)
             else:
                 pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_ik, calibrate)
         
@@ -326,7 +329,7 @@ class CalibrationConvergenceSimulator:
         else:
             return None, None, None, None
         
-    def generate_measurement_joints_camera(self, joint_positions_input=None, calibrate=True):
+    def generate_measurement_joints_camera(self, joint_positions_input=None, calibrate=True, camera_to_target_meas=None):
         """Generate camera-based measurements using full homogeneous transformations to known targets
         
         Args:
@@ -345,69 +348,70 @@ class CalibrationConvergenceSimulator:
         target_position_world = self.target_position_world
         target_orientation_world = self.target_orientation_world
 
-
-        joint_lengths = self.joint_lengths_actual
-        XOffsets = self.XActual.flatten()
-        camera_pose_actual = self.get_fk_calibration_model(
-        joint_positions=joint_positions_actual, 
-        joint_lengths=joint_lengths, 
-        XOffsets=XOffsets,
-        camera_to_target = np.zeros(6)
-        )
-        camera_position_actual = camera_pose_actual[:3]
-        camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
-        
-        T_world_to_camera_actual = np.eye(4)
-        T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
-        T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
-        
-        target_homogeneous = np.append(target_position_world, 1)
-        target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
-        target_position_camera_actual = target_in_camera_actual[:3]
-
-        R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
-        R_target_camera_actual = camera_rotation_actual.T @ R_target_world
-        target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
-        camera_to_target_actual = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
-        self.camera_to_target_actual = camera_to_target_actual
-
-        joint_lengths_commanded = self.joint_lengths_nominal
-        XOffsets_commanded = self.XNominal
-        camera_pose_commanded = self.get_fk_calibration_model(
-            joint_positions=joint_positions_commanded, 
-            joint_lengths=joint_lengths_commanded, 
-            XOffsets=XOffsets_commanded,
+        if camera_to_target_meas is None:
+            joint_lengths = self.joint_lengths_actual
+            XOffsets = self.XActual.flatten()
+            camera_pose_actual = self.get_fk_calibration_model(
+            joint_positions=joint_positions_actual, 
+            joint_lengths=joint_lengths, 
+            XOffsets=XOffsets,
             camera_to_target = np.zeros(6)
-        )
-        camera_position_commanded = camera_pose_commanded[:3]
-        camera_rotation_commanded = R.from_euler('xyz', camera_pose_commanded[3:6]).as_matrix()
-        
-        # Create homogeneous transformation from world to camera (commanded)
-        T_world_to_camera_commanded = np.eye(4)
-        T_world_to_camera_commanded[:3, :3] = camera_rotation_commanded.T  # Inverse rotation
-        T_world_to_camera_commanded[:3, 3] = -camera_rotation_commanded.T @ camera_position_commanded
-        
-        # Transform target from world to camera frame (expected measurement)
-        target_in_camera_commanded = T_world_to_camera_commanded @ target_homogeneous
-        target_position_camera_commanded = target_in_camera_commanded[:3]
-        # Calculate target orientation relative to camera frame (commanded)
-        # Transform target orientation from world to camera frame
-        # R_target_camera = R_camera_world^T @ R_target_world
-        R_target_camera_commanded = camera_rotation_commanded.T @ R_target_world
-        target_orientation_camera_commanded = R.from_matrix(R_target_camera_commanded).as_euler('xyz')
-        camera_to_target_commanded = np.concatenate([target_position_camera_commanded, target_orientation_camera_commanded])
-        
-        
-        # Use consistent parameter application for both modes
+            )
+            camera_position_actual = camera_pose_actual[:3]
+            camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
+            
+            T_world_to_camera_actual = np.eye(4)
+            T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
+            T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
+            
+            target_homogeneous = np.append(target_position_world, 1)
+            target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
+            target_position_camera_actual = target_in_camera_actual[:3]
+
+            R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
+            R_target_camera_actual = camera_rotation_actual.T @ R_target_world
+            target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
+            camera_to_target_meas = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
+            self.camera_to_target_meas = camera_to_target_meas
+
+            joint_lengths_commanded = self.joint_lengths_nominal
+            XOffsets_commanded = self.XNominal
+            camera_pose_commanded = self.get_fk_calibration_model(
+                joint_positions=joint_positions_commanded, 
+                joint_lengths=joint_lengths_commanded, 
+                XOffsets=XOffsets_commanded,
+                camera_to_target = np.zeros(6)
+            )
+            camera_position_commanded = camera_pose_commanded[:3]
+            camera_rotation_commanded = R.from_euler('xyz', camera_pose_commanded[3:6]).as_matrix()
+            
+            # Create homogeneous transformation from world to camera (commanded)
+            T_world_to_camera_commanded = np.eye(4)
+            T_world_to_camera_commanded[:3, :3] = camera_rotation_commanded.T  # Inverse rotation
+            T_world_to_camera_commanded[:3, 3] = -camera_rotation_commanded.T @ camera_position_commanded
+            
+            # Transform target from world to camera frame (expected measurement)
+            target_in_camera_commanded = T_world_to_camera_commanded @ target_homogeneous
+            target_position_camera_commanded = target_in_camera_commanded[:3]
+            # Calculate target orientation relative to camera frame (commanded)
+            # Transform target orientation from world to camera frame
+            # R_target_camera = R_camera_world^T @ R_target_world
+            R_target_camera_commanded = camera_rotation_commanded.T @ R_target_world
+            target_orientation_camera_commanded = R.from_matrix(R_target_camera_commanded).as_euler('xyz')
+            camera_to_target_commanded = np.concatenate([target_position_camera_commanded, target_orientation_camera_commanded])
+            
         joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
         XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
-        joint_positions_est = joint_positions_commanded #This should have already been calibrated within the generate_measurement_joints call function
-
-        worldToTargetMeasured = self.get_fk_calibration_model(joint_positions = joint_positions_est,
+        
+        worldToTargetMeasured = self.get_fk_calibration_model(joint_positions = joint_positions_commanded,
                                                                  joint_lengths = joint_lengths_est,
                                                                  XOffsets = XOffsets_est,
-                                                                 camera_to_target = camera_to_target_actual)
-        
+                                                                 camera_to_target = camera_to_target_meas)
+        worldToCameraFocus = self.get_fk_calibration_model(joint_positions = joint_positions_commanded,
+                                                                 joint_lengths = joint_lengths_est,
+                                                                 XOffsets = XOffsets_est,
+                                                                 camera_to_target = np.array([0,0,camera_to_target_meas[2],0,0,0]))
+        self.cameraFocus = worldToCameraFocus
         # The actual target pose is the known ground truth
         worldToTargetActual = np.concatenate([target_position_world, target_orientation_world])
         
@@ -626,7 +630,7 @@ class CalibrationConvergenceSimulator:
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
         translation_weight = 1.0  # Weight for translational errors
-        rotation_weight = 1.0     # Weight for rotational errors
+        rotation_weight = 0.0     # Weight for rotational errors
         
         # Scale translational and rotational differences
         scaled_translation_differences = translation_weight * translationDifferences.flatten()
@@ -640,6 +644,16 @@ class CalibrationConvergenceSimulator:
 
         
         errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
+        
+        # Apply maximum caps to the parameter estimates
+        max_dQ_cap = 0.2
+        max_dL_cap = 0.2
+        max_dX_cap = 0.2
+        
+        # Cap the estimates
+        errorEstimates[0:6] = np.clip(errorEstimates[0:6], -max_dQ_cap, max_dQ_cap)    # Joint corrections
+        errorEstimates[6:12] = np.clip(errorEstimates[6:12], -max_dL_cap, max_dL_cap)  # Length corrections
+        errorEstimates[12:18] = np.clip(errorEstimates[12:18], -max_dX_cap, max_dX_cap) # Base offset corrections
         
         return errorEstimates
     
@@ -720,9 +734,9 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     rclpy.init()
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.0,
-                 dXMagnitude=0.1, camera_mode=True)
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=25, 
+                dQMagnitude=0.9, dLMagnitude=0.1,
+                 dXMagnitude=0.7, camera_mode=True)
     
     
     frame = "end_effector_link"
@@ -735,7 +749,6 @@ def main(args=None):
         simulator.targetPosNom = np.array([0.3,0,0])
         simulator.targetOrientNom = np.array([0.0,0,0])
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
-        simulator.dX[5]=0
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
     else:
         simulator.targetPosEst = np.array([0.0,0,0])
@@ -760,7 +773,7 @@ def main(args=None):
                 # Use the actual camera-to-target measurement
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample], 
-                    camera_to_target=simulator.camera_to_target_actual)
+                    camera_to_target=simulator.camera_to_target_meas)
             else:
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample])

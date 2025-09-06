@@ -115,12 +115,11 @@ def main(args=None):
     # Create simulator with camera mode for visual demonstration
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
                                                dQMagnitude=0.1, dLMagnitude=0.0, 
-                                               dXMagnitude=0.0, camera_mode=True)
+                                               dXMagnitude=0.1, camera_mode=True)
     if simulator.camera_mode:
         simulator.targetPosNom = np.array([0.3,0,0])
         simulator.targetOrientNom = np.array([0.0,0,0])
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
-        simulator.dX[5]=0
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
     else:
         simulator.targetPosEst = np.array([0.0,0,0])
@@ -207,24 +206,12 @@ def main(args=None):
                 
             simulator.current_sample += 1  
             print(f"Measurement {i}: Generated successfully")
-
-        # Process all measurements for this iteration using the correct target arrays
-        # the order of the measured and expected is off here compared to other examples
-        # still need to debug what makes this work
         
         results = simulator.process_iteration_results(
                 simulator.targetPoseExpected,
                 simulator.targetPoseMeasured,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
-        
-        '''# Visualize convergence progress
-        avgTransAndRotError, dLEst, dQAct, dQEst, dXEst = results
-        print(f"Iteration {j} completed:")
-        print(f"  Translation Error: {avgTransAndRotError[0]:.6f}")
-        print(f"  Rotation Error: {avgTransAndRotError[1]:.6f}")
-        print(f"  Joint Error Estimate: {dQEst}")
-        print(f"  Base Offset Estimate: {dXEst}")'''
     
     # Save results to CSV
     #simulator.save_to_csv(filename='visual_calibration_data.csv')

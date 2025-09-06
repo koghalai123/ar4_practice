@@ -68,7 +68,7 @@ class ArucoPoseEstimator(Node):
         self.depth_scale = 0.001  # Default scale (assuming depth is in mm)
 
         # ARUCO Setup
-        self.MARKER_SIZE_CM = 14.6
+        self.MARKER_SIZE_CM = 14.6/2#* 0.1021
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_1000)
         self.aruco_params = cv2.aruco.DetectorParameters_create()
 
