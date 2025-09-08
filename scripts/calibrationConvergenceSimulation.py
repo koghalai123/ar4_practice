@@ -164,7 +164,7 @@ class CalibrationConvergenceSimulator:
         self.camera_measurements = sp.symbols('c1:7')
         
         #self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [self.x[3], self.x[4], 0], rotation_order='XYZ')
-        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], 0], [0, 0, 0], rotation_order='XYZ')
+        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], self.x[2]], self.x[3:6], rotation_order='XYZ')
         self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], self.XActual[3:], rotation_order='XYZ')
 
         for i in range(1, 7):
@@ -309,7 +309,7 @@ class CalibrationConvergenceSimulator:
         #FRAME IS IN THE END EFFECTOR LINK FRAME
         acceptRandom = False
         if pose is None:
-            pose = np.random.uniform(-0.15, 0.15, (1, 6))[0]
+            pose = np.random.uniform(-0.3, 0.3, (1, 6))[0]
             acceptRandom= True
         position = pose[:3]
         orientation =  pose[3:6]
@@ -734,9 +734,9 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     rclpy.init()
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=25, 
-                dQMagnitude=0.9, dLMagnitude=0.1,
-                 dXMagnitude=0.7, camera_mode=True)
+    simulator = CalibrationConvergenceSimulator(n=10, numIters=12, 
+                dQMagnitude=0.2, dLMagnitude=0.1,
+                 dXMagnitude=0.2, camera_mode=True)
     
     
     frame = "end_effector_link"

@@ -199,7 +199,7 @@ def main(args=None):
                 # Use the actual camera-to-target measurement
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample], 
-                    camera_to_target=simulator.camera_to_target_actual)
+                    camera_to_target=simulator.camera_to_target_meas)
             else:
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample])

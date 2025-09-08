@@ -15,7 +15,7 @@ import csv
 from scipy.spatial.transform import Rotation as R
 
 
-'''rclpy.init()
+rclpy.init()
 node = rclpy.create_node("fk_example_node")
 moveit2 = MoveIt2(
             node=node,
@@ -46,7 +46,7 @@ for joint_positions in random_array:
 
 np.savetxt("verifyFKPoints.csv", poseArray, delimiter=",", header="x,y,z,qx,qy,qz,qw,J1,J2,J3,J4,J5,J6", comments="")
 
-rclpy.shutdown()'''
+rclpy.shutdown()
 symbolic_matrices = {}
 
 fileNameList = ["Joint1.csv", "Joint2.csv", "Joint3.csv", "Joint4.csv", "Joint5.csv", "Joint6.csv", "Joint7.csv", "Joint8.csv",]
@@ -104,7 +104,7 @@ for i in range(0, moveitPoses.shape[0]):
     #print(moveitFKResult-myFKResult)
 
 meanDifference = np.mean(np.sum(np.abs(poseArray-moveitPoses),axis=1))/i
-
+print(meanDifference)
 print('done')
 
 
