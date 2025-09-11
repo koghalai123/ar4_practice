@@ -116,6 +116,7 @@ def main(args=None):
     simulator = CalibrationConvergenceSimulator(n=8, numIters=10, 
                                                dQMagnitude=0.1, dLMagnitude=0.0, 
                                                dXMagnitude=0.1, camera_mode=True)
+    simulator.robot = robot
     if simulator.camera_mode:
         simulator.targetPosNom = np.array([0.3,0,0])
         simulator.targetOrientNom = np.array([0.0,0,0])
@@ -178,10 +179,11 @@ def main(args=None):
                 if motionSucceeded:
                     
                     marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
-                                                  color = np.array([0.2, 0.8, 0.2])
-                                                  , euler=  targetOrientWeirdFrameEst)
+                                                  color=np.array([0.2, 0.8, 0.2])
+                                                  , euler=targetOrientWeirdFrameEst)
                     marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame, id=0
-                                                  , euler=  targetOrientWeirdFrame)
+                                                  , euler=targetOrientWeirdFrame)
+                    
                     marker_publisher.publish_arrow_between_points(
                     start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
                     end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
@@ -199,7 +201,7 @@ def main(args=None):
                 # Use the actual camera-to-target measurement
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample], 
-                    camera_to_target=simulator.camera_to_target_meas)
+                    camera_to_target=simulator.camera_to_target_meas_test)
             else:
                 numJacobianTrans, numJacobianRot = simulator.compute_jacobians(
                     simulator.joint_positions_commanded[simulator.current_sample])

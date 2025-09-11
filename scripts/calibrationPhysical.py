@@ -22,7 +22,7 @@ import io
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
-    scale = 0.3
+    scale = 0.2
     random_pos = (random_numbers-0.5)*scale
     xOffset = 0 - scale
     yOffset = 0
@@ -154,7 +154,7 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=50, numIters=20, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     
@@ -206,9 +206,13 @@ def main(args=None):
                 
                 joint_positions_est = joint_positions_commanded.copy()
                 joint_positions_est = joint_positions_est - np.sum(simulator.dQMat, axis=0)
-                joint_positions_est[4] -= np.pi/2
-                motionSucceeded = robot.move_to_joint_positions(joint_positions_est)
+                motion1Succeeded = robot.move_to_joint_positions(joint_positions_est-0.1)
+                if motion1Succeeded:
+                    motionSucceeded = robot.move_to_joint_positions(joint_positions_est)
+                else:
+                    continue
                 if motionSucceeded:
+                    time.sleep(0.2)
                     arucoSensedPose = query_aruco_pose(query_node)
                     if arucoSensedPose is None:
                         continue
@@ -257,6 +261,7 @@ def main(args=None):
                 
             error = simulator.targetPoseExpected[simulator.current_sample] - simulator.targetPoseMeasured[simulator.current_sample]
             print(f"Measurement {i}: Generated successfully, Error: {error}")
+            print(f"Measured Target Pose: {simulator.targetPoseMeasured[simulator.current_sample]}")
             simulator.current_sample += 1  
             
 
