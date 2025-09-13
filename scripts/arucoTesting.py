@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+from sympy import sequence
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped, PoseArray
 from cv_bridge import CvBridge
 import cv2
@@ -68,7 +69,7 @@ class ArucoPoseEstimator(Node):
         self.depth_scale = 0.001  # Default scale (assuming depth is in mm)
 
         # ARUCO Setup
-        self.MARKER_SIZE_CM = 14.6/2#* 0.1021
+        self.MARKER_SIZE_CM = 14.6#* 0.1021
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_1000)
         self.aruco_params = cv2.aruco.DetectorParameters_create()
 
@@ -95,6 +96,19 @@ class ArucoPoseEstimator(Node):
             (0, 255, 0)     # Green - Kalman-filtered
         ]
 
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo,
+            '/camera/camera/color/camera_info',
+            self.camera_info_callback,
+            1)
+
+    def camera_info_callback(self, msg):
+        """Get actual camera calibration from ROS"""
+        self.camera_matrix = np.array(msg.k).reshape(3, 3).astype(np.float32)
+        self.dist_coeffs = np.array(msg.d).astype(np.float32)
+        #self.get_logger().info(f"Got camera matrix: {self.camera_matrix}")
+        #self.get_logger().info(f"Got distortion: {self.dist_coeffs}")
+        
     def depth_callback(self, msg):
         """Store the latest depth image"""
         try:
@@ -210,8 +224,15 @@ class ArucoPoseEstimator(Node):
                 corners, self.MARKER_SIZE_CM, 
                 self.camera_matrix, self.dist_coeffs
             )
-            rot = R.from_rotvec(rvec[0].flatten())
-            euler = rot.as_euler('xyz')
+            rotation_matrix, _ = cv2.Rodrigues(rvec)
+            
+            # Create Rotation object from matrix
+            rotation = R.from_matrix(rotation_matrix)
+            
+            # Extract Euler angles
+            euler = rotation.as_euler(seq='xyz', degrees=False)
+            '''rot = R.from_rotvec(rvec[0].flatten())
+            euler = rot.as_euler('xyz')'''
             raw_pose = np.concatenate([tvec[0].flatten(), euler])
             
             # 2. Depth-enhanced pose

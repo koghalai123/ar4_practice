@@ -7,7 +7,7 @@ import argparse
 from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Quaternion, Point, Pose
 from geometry_msgs.msg import PoseStamped, PoseArray
-
+from scipy.spatial.transform import Rotation as R
 from surface_publisher import SurfacePublisher
 from ar4_robot_py import AR4Robot
 from calibrationConvergenceSimulation import CalibrationConvergenceSimulator
@@ -22,7 +22,7 @@ import io
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
-    scale = 0.2
+    scale = 0.3
     random_pos = (random_numbers-0.5)*scale
     xOffset = 0 - scale
     yOffset = 0
@@ -131,7 +131,7 @@ def query_aruco_pose(node):
     position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
     
     # Convert quaternion to euler angles
-    from scipy.spatial.transform import Rotation as R
+    
     quat = [msg.pose.orientation.x, msg.pose.orientation.y, 
             msg.pose.orientation.z, msg.pose.orientation.w]
     rot = R.from_quat(quat)
@@ -154,12 +154,12 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=50, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=30, numIters=20, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
-    
+    simulator.dLMat[1,5] = 1
     if simulator.camera_mode:
-        simulator.targetPosNom = np.array([0.3,0,0])
+        simulator.targetPosNom = np.array([0.3,-0.05,0])
         simulator.targetOrientNom = np.array([np.pi,0,0])
         simulator.targetPosEst = simulator.targetPosNom.copy()
         simulator.targetOrientEst = simulator.targetOrientNom.copy()
@@ -206,47 +206,52 @@ def main(args=None):
                 
                 joint_positions_est = joint_positions_commanded.copy()
                 joint_positions_est = joint_positions_est - np.sum(simulator.dQMat, axis=0)
+                joint_positions_est[5]= joint_positions_est[5] +np.pi/2
                 motion1Succeeded = robot.move_to_joint_positions(joint_positions_est-0.1)
                 if motion1Succeeded:
                     motionSucceeded = robot.move_to_joint_positions(joint_positions_est)
                 else:
                     continue
                 if motionSucceeded:
-                    time.sleep(0.2)
-                    arucoSensedPose = query_aruco_pose(query_node)
-                    if arucoSensedPose is None:
-                        continue
-                    simulator.camera_to_target_actual = arucoSensedPose
-                    #Rerun the command with an actual camera measurement
-                    pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
-                    robot=robot, pose=pose_desired, calibrate=True, frame="base_link", 
-                    camera_to_target_meas=arucoSensedPose
-                    )   
-                    targetPosWeirdFrameEst, targetOrientWeirdFrameEst = robot.from_preferred_frame(
-                        simulator.targetPosEst, simulator.targetOrientEst, 
-                        old_reference_frame="base_link", new_reference_frame="global")
-                    endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
-                        globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                        old_reference_frame="base_link", new_reference_frame="global")
-                
-                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
-                                                  color = np.array([0.2, 0.8, 0.2])
-                                                  , euler=  targetOrientWeirdFrameEst)
+                    for k in range(1):
+                        time.sleep(0.2)
+                        arucoSensedPose = query_aruco_pose(query_node)
+                        if arucoSensedPose is None:
+                            continue
+                        
+                        #arucoSensedPose[1] = -arucoSensedPose[1]  
+                        #arucoSensedPose[0] = -arucoSensedPose[0]  
+                        simulator.camera_to_target_actual = arucoSensedPose
+                        #Rerun the command with an actual camera measurement
+                        pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = simulator.generate_measurement_pose(
+                        robot=robot, pose=pose_desired, calibrate=True, frame="base_link", 
+                        camera_to_target_meas=arucoSensedPose
+                        )   
+                        targetPosWeirdFrameEst, targetOrientWeirdFrameEst = robot.from_preferred_frame(
+                            simulator.targetPosEst, simulator.targetOrientEst, 
+                            old_reference_frame="base_link", new_reference_frame="global")
+                        endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
+                            globalEndEffectorPos, np.array([roll,pitch,yaw]), 
+                            old_reference_frame="base_link", new_reference_frame="global")
                     
-                    marker_publisher.publishPlane(np.array([0.146]), simulator.targetPoseMeasured[simulator.current_sample][:3], id=2,
-                                                  color = np.array([1.0, 1.0, 1.0])
-                                                  , euler=  simulator.targetPoseMeasured[simulator.current_sample][3:])
-                    '''marker_publisher.publishPlane(np.array([0.146]), simulator.cameraFocus[:3], id=3,
-                                                  color = np.array([1.0, 0.0, 0.0])
-                                                  , euler=  simulator.cameraFocus[3:])'''
-                    marker_publisher.publish_arrow_between_points(
-                    start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
-                    end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
-                    thickness=0.01,
-                    id=1,
-                    color=np.array([0.0, 1.0, 0.0])
-                    )
-                    successfulMeasurement = True
+                        marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
+                                                    color = np.array([0.2, 0.8, 0.2])
+                                                    , euler=  targetOrientWeirdFrameEst)
+                        
+                        marker_publisher.publishPlane(np.array([0.146]), simulator.targetPoseMeasured[simulator.current_sample][:3], id=2,
+                                                    color = np.array([1.0, 1.0, 1.0])
+                                                    , euler=  simulator.targetPoseMeasured[simulator.current_sample][3:])
+                        '''marker_publisher.publishPlane(np.array([0.146]), simulator.cameraFocus[:3], id=3,
+                                                    color = np.array([1.0, 0.0, 0.0])
+                                                    , euler=  simulator.cameraFocus[3:])'''
+                        marker_publisher.publish_arrow_between_points(
+                        start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
+                        end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
+                        thickness=0.01,
+                        id=1,
+                        color=np.array([0.0, 1.0, 0.0])
+                        )
+                        successfulMeasurement = True
                     break
                 counter += 1
 

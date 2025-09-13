@@ -635,7 +635,7 @@ class CalibrationConvergenceSimulator:
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
         translation_weight = 1.0  # Weight for translational errors
-        rotation_weight = 0.0     # Weight for rotational errors
+        rotation_weight = 1.0     # Weight for rotational errors
         
         # Scale translational and rotational differences
         scaled_translation_differences = translation_weight * translationDifferences.flatten()
@@ -651,9 +651,9 @@ class CalibrationConvergenceSimulator:
         errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
         
         # Apply maximum caps to the parameter estimates
-        max_dQ_cap = 0.5
-        max_dL_cap = 0.5
-        max_dX_cap = 0.5
+        max_dQ_cap = 5
+        max_dL_cap = 5
+        max_dX_cap = 5
         
         # Cap the estimates
         errorEstimates[0:6] = np.clip(errorEstimates[0:6], -max_dQ_cap, max_dQ_cap)    # Joint corrections
@@ -740,7 +740,7 @@ def main(args=None):
     # Create simulator
     rclpy.init()
     simulator = CalibrationConvergenceSimulator(n=10, numIters=12, 
-                dQMagnitude=0.1, dLMagnitude=0.0,
+                dQMagnitude=0.1, dLMagnitude=0.1,
                  dXMagnitude=0.1, camera_mode=True)
     
     
