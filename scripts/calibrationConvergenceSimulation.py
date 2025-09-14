@@ -22,7 +22,7 @@ import pandas as pd
 
 class CalibrationConvergenceSimulator:
     def __init__(self, n=10, numIters=10, dQMagnitude=0.1, dLMagnitude=0.0,
-                 dXMagnitude=0.1, camera_mode=False):
+                 dXMagnitude=0.1, camera_mode=False, noiseMagnitude=0.00):
         self.camera_mode = camera_mode
         if camera_mode:
             self.target_position_world = np.array([0,-0.3,0])
@@ -33,9 +33,8 @@ class CalibrationConvergenceSimulator:
 
         self.n=n
         self.m = 6
-        self.noiseMagnitude = 0.00
-        
-                
+        self.noiseMagnitude = noiseMagnitude
+
         self.resetMatrices()
         
         self.dQMagnitude = dQMagnitude
@@ -457,7 +456,7 @@ class CalibrationConvergenceSimulator:
         
         joint_lengths = self.joint_lengths_actual
         XOffsets =  self.XActual.flatten()
-        joint_positions_actual = joint_positions_est + self.dQ
+        joint_positions_actual = joint_positions_est + self.dQ + np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (1, 6))[0]
         pose_actual = self.get_fk_calibration_model(joint_positions_actual, joint_lengths, XOffsets)
 
 
@@ -739,11 +738,11 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     rclpy.init()
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=12, 
+    simulator = CalibrationConvergenceSimulator(n=20, numIters=20, 
                 dQMagnitude=0.1, dLMagnitude=0.1,
-                 dXMagnitude=0.1, camera_mode=True)
-    
-    
+                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.05)
+
+
     frame = "end_effector_link"
 
     robot = AR4Robot()
