@@ -369,7 +369,9 @@ class CalibrationConvergenceSimulator:
         R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
         R_target_camera_actual = camera_rotation_actual.T @ R_target_world
         target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
-        camera_to_target_meas_test = np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
+        
+        
+        camera_to_target_meas_test = 0.2*self.noiseMagnitude*np.random.uniform(-1, 1, 6) + np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
         self.camera_to_target_meas_test = camera_to_target_meas_test
 
         joint_lengths_commanded = self.joint_lengths_nominal
@@ -738,9 +740,9 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     rclpy.init()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=40, numIters=10, 
                 dQMagnitude=0.1, dLMagnitude=0.1,
-                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.05)
+                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.1)
 
 
     frame = "end_effector_link"
