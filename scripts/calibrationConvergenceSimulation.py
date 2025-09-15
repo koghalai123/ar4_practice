@@ -741,7 +741,7 @@ def main(args=None):
     # Create simulator
     rclpy.init()
     simulator = CalibrationConvergenceSimulator(n=40, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.1,
+                dQMagnitude=0.1, dLMagnitude=0.02,
                  dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.1)
 
 

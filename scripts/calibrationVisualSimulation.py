@@ -22,7 +22,7 @@ import io
 
 def get_new_end_effector_position(robot):
     random_numbers = np.random.rand(3) 
-    scale = 0.1
+    scale = 0.4
     random_pos = (random_numbers-0.5)*scale
     xOffset = 0 - scale
     yOffset = 0
@@ -113,9 +113,9 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=40, numIters=10, 
-                                               dQMagnitude=0.1, dLMagnitude=0.0, 
-                                               dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.1)
+    simulator = CalibrationConvergenceSimulator(n=100, numIters=10, 
+                                               dQMagnitude=0.1, dLMagnitude=0.01, 
+                                               dXMagnitude=0.07, camera_mode=True, noiseMagnitude=0.05)
     simulator.robot = robot
     if simulator.camera_mode:
         simulator.targetPosNom = np.array([0.3,0,0])
@@ -177,6 +177,10 @@ def main(args=None):
                 
                 
                 if motionSucceeded:
+                    marker_publisher.publishPlane(np.array([0.146]), simulator.targetPoseMeasured[simulator.current_sample][:3], id=2,
+                                                    color = np.array([1.0, 1.0, 1.0])
+                                                    , euler=  simulator.targetPoseMeasured[simulator.current_sample][3:])
+
                     
                     marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
                                                   color=np.array([0.2, 0.8, 0.2])
