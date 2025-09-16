@@ -282,6 +282,7 @@ class CalibrationConvergenceSimulator:
         trans = np.array(M_num_actual[:3, 3]).flatten().T
         pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
         
+        
         return pose
     
     def get_fk_calibration_model(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
@@ -357,21 +358,23 @@ class CalibrationConvergenceSimulator:
         )
         camera_position_actual = camera_pose_actual[:3]
         camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
-        
-        T_world_to_camera_actual = np.eye(4)
-        T_world_to_camera_actual[:3, :3] = camera_rotation_actual.T  # Inverse rotation
-        T_world_to_camera_actual[:3, 3] = -camera_rotation_actual.T @ camera_position_actual
-        
-        target_homogeneous = np.append(target_position_world, 1)
-        target_in_camera_actual = T_world_to_camera_actual @ target_homogeneous
-        target_position_camera_actual = target_in_camera_actual[:3]
 
         R_target_world = R.from_euler('xyz', self.target_orientation_world).as_matrix()
-        R_target_camera_actual = camera_rotation_actual.T @ R_target_world
-        target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
+        T_world_to_target = np.eye(4)
+        T_world_to_target[:3, 3] = target_position_world
+        T_world_to_target[:3, :3] = R_target_world
+
+        T_world_to_camera_actual = np.eye(4)
+        T_world_to_camera_actual[:3, :3] = camera_rotation_actual
+        T_world_to_camera_actual[:3, 3] = camera_position_actual
+        T_camera_target = np.linalg.inv(T_world_to_camera_actual) @ T_world_to_target
         
+        R_target_camera_actual = T_camera_target[:3, :3]
+        target_orientation_camera_actual = R.from_matrix(R_target_camera_actual).as_euler('xyz')
+        target_position_camera_actual = T_camera_target[:3, 3]
         
         camera_to_target_meas_test = 0.2*self.noiseMagnitude*np.random.uniform(-1, 1, 6) + np.concatenate([target_position_camera_actual, target_orientation_camera_actual])
+
         self.camera_to_target_meas_test = camera_to_target_meas_test
 
         joint_lengths_commanded = self.joint_lengths_nominal
@@ -384,19 +387,16 @@ class CalibrationConvergenceSimulator:
         )
         camera_position_commanded = camera_pose_commanded[:3]
         camera_rotation_commanded = R.from_euler('xyz', camera_pose_commanded[3:6]).as_matrix()
-        
-        # Create homogeneous transformation from world to camera (commanded)
+
+        # Create camera-to-world transformation 
         T_world_to_camera_commanded = np.eye(4)
-        T_world_to_camera_commanded[:3, :3] = camera_rotation_commanded.T  # Inverse rotation
-        T_world_to_camera_commanded[:3, 3] = -camera_rotation_commanded.T @ camera_position_commanded
+        T_world_to_camera_commanded[:3, :3] = camera_rotation_commanded
+        T_world_to_camera_commanded[:3, 3] = camera_position_commanded
+
+        target_in_camera_commanded = np.linalg.inv(T_world_to_camera_commanded) @ T_world_to_target
+        target_position_camera_commanded = target_in_camera_commanded[:3, 3]
+        R_target_camera_commanded = target_in_camera_commanded[:3, :3]
         
-        # Transform target from world to camera frame (expected measurement)
-        target_in_camera_commanded = T_world_to_camera_commanded @ target_homogeneous
-        target_position_camera_commanded = target_in_camera_commanded[:3]
-        # Calculate target orientation relative to camera frame (commanded)
-        # Transform target orientation from world to camera frame
-        # R_target_camera = R_camera_world^T @ R_target_world
-        R_target_camera_commanded = camera_rotation_commanded.T @ R_target_world
         target_orientation_camera_commanded = R.from_matrix(R_target_camera_commanded).as_euler('xyz')
         camera_to_target_commanded = np.concatenate([target_position_camera_commanded, target_orientation_camera_commanded])
 
@@ -741,8 +741,8 @@ def main(args=None):
     # Create simulator
     rclpy.init()
     simulator = CalibrationConvergenceSimulator(n=40, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.02,
-                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.1)
+                dQMagnitude=0.0, dLMagnitude=0.0,
+                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0)
 
 
     frame = "end_effector_link"
