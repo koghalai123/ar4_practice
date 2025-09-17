@@ -113,8 +113,8 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=10, 
-                                               dQMagnitude=0.0, dLMagnitude=0.0, 
+    simulator = CalibrationConvergenceSimulator(n=7, numIters=10, 
+                                               dQMagnitude=0.1, dLMagnitude=0.01, 
                                                dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.00)
     simulator.robot = robot
     if simulator.camera_mode:
@@ -214,8 +214,8 @@ def main(args=None):
             print(f"Measurement {i}: Generated successfully")
         
         results = simulator.process_iteration_results(
-                simulator.targetPoseExpected,
                 simulator.targetPoseMeasured,
+                simulator.targetPoseExpected,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
     
