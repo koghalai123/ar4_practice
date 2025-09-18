@@ -154,10 +154,11 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=30, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=10, numIters=20, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
-    simulator.dLMat[1,5] = 1
+    simulator.robot = robot
+    simulator.dLMat[0,5] = 1
     if simulator.camera_mode:
         simulator.targetPosNom = np.array([0.3,-0.05,0])
         simulator.targetOrientNom = np.array([np.pi,0,0])
@@ -233,7 +234,10 @@ def main(args=None):
                         endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
                             globalEndEffectorPos, np.array([roll,pitch,yaw]), 
                             old_reference_frame="base_link", new_reference_frame="global")
-                    
+                        
+                        marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
+                                                  color=np.array([0.2, 0.8, 0.2])
+                                                  , euler=targetOrientWeirdFrameEst)
                         marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
                                                     color = np.array([0.2, 0.8, 0.2])
                                                     , euler=  targetOrientWeirdFrameEst)
@@ -265,14 +269,14 @@ def main(args=None):
                     simulator.joint_positions_commanded[simulator.current_sample])
                 
             error = simulator.targetPoseExpected[simulator.current_sample] - simulator.targetPoseMeasured[simulator.current_sample]
-            print(f"Measurement {i}: Generated successfully, Error: {error}")
-            print(f"Measured Target Pose: {simulator.targetPoseMeasured[simulator.current_sample]}")
+            #print(f"Measurement {i}: Generated successfully, Error: {error}")
+            #print(f"Measured Target Pose: {simulator.targetPoseMeasured[simulator.current_sample]}")
             simulator.current_sample += 1  
             
 
         results = simulator.process_iteration_results(
-                simulator.targetPoseExpected,
                 simulator.targetPoseMeasured,
+                simulator.targetPoseExpected,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
     
