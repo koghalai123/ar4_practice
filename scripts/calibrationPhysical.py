@@ -160,18 +160,20 @@ def main(args=None):
     simulator.robot = robot
     simulator.dLMat[0,5] = 1
     if simulator.camera_mode:
-        simulator.targetPosNom = np.array([0.3,-0.05,0])
-        simulator.targetOrientNom = np.array([np.pi,0,0])
-        simulator.targetPosEst = simulator.targetPosNom.copy()
-        simulator.targetOrientEst = simulator.targetOrientNom.copy()
-        simulator.targetPosActual = simulator.targetPosNom.copy()
-        simulator.targetOrientActual = simulator.targetOrientNom.copy()
+        simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
+            np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
+        simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
+        simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
     else:
         simulator.targetPosEst = np.array([0.0,0,0])
         simulator.targetOrientEst = np.array([0,0,0])
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom
-    
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
+        
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
@@ -235,9 +237,7 @@ def main(args=None):
                             globalEndEffectorPos, np.array([roll,pitch,yaw]), 
                             old_reference_frame="base_link", new_reference_frame="global")
                         
-                        marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
-                                                  color=np.array([0.2, 0.8, 0.2])
-                                                  , euler=targetOrientWeirdFrameEst)
+                        
                         marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
                                                     color = np.array([0.2, 0.8, 0.2])
                                                     , euler=  targetOrientWeirdFrameEst)

@@ -115,18 +115,21 @@ def main(args=None):
     # Create simulator with camera mode for visual demonstration
     simulator = CalibrationConvergenceSimulator(n=7, numIters=10, 
                                                dQMagnitude=0.1, dLMagnitude=0.01, 
-                                               dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.00)
-    simulator.robot = robot
+                                               dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.00, robot = robot)
     if simulator.camera_mode:
-        simulator.targetPosNom = np.array([0.3,0,0])
-        simulator.targetOrientNom = np.array([0.0,0,0])
+        simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
+            np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
     else:
         simulator.targetPosEst = np.array([0.0,0,0])
         simulator.targetOrientEst = np.array([0,0,0])
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
     # Process each iteration separately
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
@@ -144,7 +147,8 @@ def main(args=None):
                 
                 # Calculate camera orientation to point at target
                 # Vector should point FROM camera TO target
-                vectorToTarget = simulator.targetPosEst - globalEndEffectorPos
+                targetPosEstNiceFrame, temp = simulator.robot.to_preferred_frame(simulator.targetPosEst,simulator.targetOrientEst)
+                vectorToTarget = targetPosEstNiceFrame - globalEndEffectorPos
                 roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], 
                                                          vectorToTarget[1], 
                                                          vectorToTarget[2],
@@ -160,18 +164,6 @@ def main(args=None):
                 robot.warn_enabled = True
                 if pose_actual is None:
                     continue
-
-
-                # Transform poses to robot's coordinate frame
-                targetPosWeirdFrame, targetOrientWeirdFrame = robot.from_preferred_frame(
-                    simulator.targetPosActual, simulator.targetOrientActual, 
-                    old_reference_frame="base_link", new_reference_frame="global")
-                targetPosWeirdFrameEst, targetOrientWeirdFrameEst = robot.from_preferred_frame(
-                    simulator.targetPosEst, simulator.targetOrientEst, 
-                    old_reference_frame="base_link", new_reference_frame="global")
-                endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
-                    globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                    old_reference_frame="base_link", new_reference_frame="global")
                 
                 motionSucceeded = robot.move_to_joint_positions(joint_positions_actual)
                 
@@ -181,16 +173,15 @@ def main(args=None):
                                                     color = np.array([1.0, 1.0, 1.0])
                                                     , euler=  simulator.targetPoseMeasured[simulator.current_sample][3:])
 
-                    
-                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
+                    marker_publisher.publishPlane(np.array([0.146]), simulator.targetPosEst, id=1,
                                                   color=np.array([0.2, 0.8, 0.2])
-                                                  , euler=targetOrientWeirdFrameEst)
-                    marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrame, id=0
-                                                  , euler=targetOrientWeirdFrame)
+                                                  , euler=simulator.targetOrientEst)
+                    marker_publisher.publishPlane(np.array([0.146]), simulator.targetPosActual, id=0
+                                                  , euler=simulator.targetOrientActual)
                     
                     marker_publisher.publish_arrow_between_points(
                     start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
-                    end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
+                    end=np.array([simulator.targetPosEst[0], simulator.targetPosEst[1], simulator.targetPosEst[2]]),
                     thickness=0.01,
                     id=1,
                     color=np.array([0.0, 1.0, 0.0])

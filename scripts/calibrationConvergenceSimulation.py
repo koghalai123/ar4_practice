@@ -22,11 +22,17 @@ import pandas as pd
 
 class CalibrationConvergenceSimulator:
     def __init__(self, n=10, numIters=10, dQMagnitude=0.1, dLMagnitude=0.0,
-                 dXMagnitude=0.1, camera_mode=False, noiseMagnitude=0.00):
+                 dXMagnitude=0.1, camera_mode=False, noiseMagnitude=0.00, robot = None):
         self.camera_mode = camera_mode
-        if camera_mode:
-            self.targetPosActual = np.array([0.3,0,0])
-            self.targetOrientActual = np.array([0,0,0])
+            
+        
+        if robot is not None:
+            self.robot = robot
+            self.targetPosNom, self.targetOrientNom = self.robot.from_preferred_frame(
+            np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
+        else:
+            self.targetPosNom = np.array([0,-0.3,0])
+            self.targetOrientNom = np.array([-np.pi/2,0,np.pi])
             
         self.OnPhysicalRobot = False
         self.PhysicalCameraMeasurement = np.zeros(6)
@@ -64,10 +70,11 @@ class CalibrationConvergenceSimulator:
         self.current_iter = 0
         self.current_sample = 0
         
-        self.targetPosNom = np.array([0.3,0,0])
-        self.targetOrientNom = np.array([0,0,0])
+        
+        
         self.targetPosEst = self.targetPosNom
         self.targetOrientEst = self.targetOrientNom
+        
         self.targetPosActual = self.targetPosNom + self.dX[:3]
         self.targetOrientActual = self.targetOrientNom
         
@@ -163,7 +170,7 @@ class CalibrationConvergenceSimulator:
         self.camera_measurements = sp.symbols('c1:7')
         
         #self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [self.x[3], self.x[4], 0], rotation_order='XYZ')
-        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], self.x[2]], [0,0,0], rotation_order='XYZ')
+        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], self.x[2]], self.x[3:], rotation_order='XYZ')
         self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='XYZ')
 
         for i in range(1, 7):
@@ -342,13 +349,13 @@ class CalibrationConvergenceSimulator:
             joint_positions_actual: Actual joint positions
             joint_positions_commanded: Commanded joint positions
         """
-        # Generate standard joint measurements first
+        #
         pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded = self.generate_measurement_joints(joint_positions_commanded=joint_positions_input, calibrate=calibrate)
         
-        targetPosActual, targetOrientActual = self.robot.from_preferred_frame(self.targetPosActual, self.targetOrientActual)
+        targetPosActual = self.targetPosActual
         
         joint_lengths = self.joint_lengths_actual
-        XOffsets = self.XActual.flatten()
+        #XOffsets = self.XActual.flatten()
         camera_pose_actual = self.get_fk_calibration_model(
         joint_positions=joint_positions_actual, 
         joint_lengths=joint_lengths, 
@@ -359,6 +366,8 @@ class CalibrationConvergenceSimulator:
         camera_rotation_actual = R.from_euler('xyz', camera_pose_actual[3:6]).as_matrix()
 
         R_target_world = R.from_euler('xyz', self.targetOrientActual).as_matrix()
+        R.from_matrix(R_target_world[:3,:3]).as_euler('xyz')
+        R.from_euler('xyz', R.from_matrix(R_target_world[:3,:3]).as_euler('xyz')).as_matrix()
         T_world_to_target = np.eye(4)
         T_world_to_target[:3, 3] = targetPosActual
         T_world_to_target[:3, :3] = R_target_world
@@ -404,8 +413,9 @@ class CalibrationConvergenceSimulator:
         
         T_world_to_camera_commanded @ T_camera_target_commanded
 
-        T_world_to_camera_actual @ T_camera_target_actual
-
+        T_world_to_target_from_calc = T_world_to_camera_actual @ T_camera_target_actual
+        R.from_matrix(T_world_to_target_from_calc[:3,:3]).as_euler('xyz')
+        
         if camera_to_target_meas is None:
             self.camera_to_target_meas = camera_to_target_meas_test
             camera_to_target_meas = camera_to_target_meas_test
@@ -420,8 +430,7 @@ class CalibrationConvergenceSimulator:
                                                                  
                                                                  
         #self.cameraFocus = worldToCameraFocus
-        targetPosEst, targetOrientEst = self.robot.from_preferred_frame(self.targetPosEst, self.targetOrientEst)
-        worldToTargetEst = np.concatenate([targetPosEst, targetOrientEst])
+        worldToTargetEst = np.concatenate([self.targetPosEst, self.targetOrientEst])
 
         # Store measurements: expected vs actual (consistent with standard mode direction)
         self.targetPoseExpected[self.current_sample][:] = worldToTargetEst
@@ -451,7 +460,7 @@ class CalibrationConvergenceSimulator:
                 self.targetPosEst = self.targetPosNom + np.sum(self.dXMat, axis=0)[:3]
                 self.targetOrientEst = self.targetOrientNom + np.sum(self.dXMat, axis=0)[3:]
             else:
-                XOffsets_est = self.XNominal + np.sum(self.dXMat, axis=0)
+                XOffsets_est = self.XNominal #+ np.sum(self.dXMat, axis=0)
             # Apply current parameter estimates to get expected measurement
             joint_lengths_est = self.joint_lengths_nominal + np.sum(self.dLMat, axis=0)
             
@@ -637,7 +646,7 @@ class CalibrationConvergenceSimulator:
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
         translation_weight = 1.0  # Weight for translational errors
-        rotation_weight = 0.0     # Weight for rotational errors
+        rotation_weight = 1.0     # Weight for rotational errors
         
         # Scale translational and rotational differences
         scaled_translation_differences = translation_weight * translationDifferences.flatten()
@@ -684,8 +693,8 @@ class CalibrationConvergenceSimulator:
         self.dLMat[j, :] = dLEst
         
         dXEst = errorEstimates[12:18]
-        self.dXMat[j, :] = dXEst
-        self.dXMat[j, 0], self.dXMat[j, 1], self.dXMat[j, 2] = self.dXMat[j, 1], -self.dXMat[j, 0], -self.dXMat[j, 2]
+        self.dXMat[j, :] = np.concatenate([-dXEst[:3],-dXEst[3:]])
+        #self.dXMat[j, 0], self.dXMat[j, 1], self.dXMat[j, 2] = self.dXMat[j, 1], -self.dXMat[j, 0], -self.dXMat[j, 2]
 
         print("Iteration: ", j)
         print("Avg Pose Error: ", avgTransAndRotError)
@@ -742,28 +751,30 @@ class CalibrationConvergenceSimulator:
 def main(args=None):
     # Create simulator
     rclpy.init()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=10, 
-                dQMagnitude=0.1, dLMagnitude=0.1,
-                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0)
-
-
-    frame = "end_effector_link"
-
     robot = AR4Robot()
     robot.disable_logging()
-    simulator.robot = robot
+    simulator = CalibrationConvergenceSimulator(n=20, numIters=20, 
+                dQMagnitude=0.0, dLMagnitude=0.0,
+                 dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0, robot = robot)
+    frame = "end_effector_link"
+
+    
     # Process each iteration separately
     
     if simulator.camera_mode:
-        simulator.targetPosNom = np.array([0.3,0,0])
-        simulator.targetOrientNom = np.array([0.0,0,0])
+        simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
+            np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
     else:
         simulator.targetPosEst = np.array([0.0,0,0])
         simulator.targetOrientEst = np.array([0,0,0])
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom
+        simulator.targetPosEst = simulator.targetPosNom
+        simulator.targetOrientEst = simulator.targetOrientNom
     
     for j in range(simulator.numIters):
         print(f"\n--- Starting Iteration {j} ---")
