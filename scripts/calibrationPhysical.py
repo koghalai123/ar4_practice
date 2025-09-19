@@ -26,7 +26,7 @@ def get_new_end_effector_position(robot):
     random_pos = (random_numbers-0.5)*scale
     xOffset = 0 - scale
     yOffset = 0
-    zOffset = robot.pos_offsets["z"] -scale
+    zOffset = robot.pos_offsets["z"] -scale*1.2
     x = xOffset + random_pos[0]
     y = yOffset + random_pos[1]
     z = zOffset + random_pos[2]
@@ -154,14 +154,14 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=25, numIters=12, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot
-    simulator.dLMat[0,5] = 1
+    simulator.dLMat[0,5] = 1.25
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
-            np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
+            np.array([0.28,-0.03,0]),np.array([np.pi,-np.pi/2,0]))
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
         simulator.targetPosEst = simulator.targetPosNom
@@ -191,7 +191,8 @@ def main(args=None):
                 
                 # Calculate camera orientation to point at target
                 # Vector should point FROM camera TO target
-                vectorToTarget = simulator.targetPosActual - globalEndEffectorPos
+                targetPosEstNiceFrame, temp = simulator.robot.to_preferred_frame(simulator.targetPosEst,simulator.targetOrientEst)
+                vectorToTarget = targetPosEstNiceFrame - globalEndEffectorPos
                 roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], 
                                                          vectorToTarget[1], 
                                                          vectorToTarget[2],
@@ -230,17 +231,9 @@ def main(args=None):
                         robot=robot, pose=pose_desired, calibrate=True, frame="base_link", 
                         camera_to_target_meas=arucoSensedPose
                         )   
-                        targetPosWeirdFrameEst, targetOrientWeirdFrameEst = robot.from_preferred_frame(
-                            simulator.targetPosEst, simulator.targetOrientEst, 
-                            old_reference_frame="base_link", new_reference_frame="global")
-                        endEffectorPosWeirdFrame, endEffectorOrientWeirdFrame = robot.from_preferred_frame(
-                            globalEndEffectorPos, np.array([roll,pitch,yaw]), 
-                            old_reference_frame="base_link", new_reference_frame="global")
-                        
-                        
-                        marker_publisher.publishPlane(np.array([0.146]), targetPosWeirdFrameEst, id=1,
-                                                    color = np.array([0.2, 0.8, 0.2])
-                                                    , euler=  targetOrientWeirdFrameEst)
+                        marker_publisher.publishPlane(np.array([0.146]), simulator.targetPosEst, id=1,
+                                                    color=np.array([0.2, 0.8, 0.2])
+                                                    , euler=simulator.targetOrientEst)
                         
                         marker_publisher.publishPlane(np.array([0.146]), simulator.targetPoseMeasured[simulator.current_sample][:3], id=2,
                                                     color = np.array([1.0, 1.0, 1.0])
@@ -250,7 +243,7 @@ def main(args=None):
                                                     , euler=  simulator.cameraFocus[3:])'''
                         marker_publisher.publish_arrow_between_points(
                         start=np.array([pose_commanded[0], pose_commanded[1], pose_commanded[2]]),
-                        end=np.array([targetPosWeirdFrameEst[0], targetPosWeirdFrameEst[1], targetPosWeirdFrameEst[2]]),
+                        end=np.array([simulator.targetPosEst[0], simulator.targetPosEst[1], simulator.targetPosEst[2]]),
                         thickness=0.01,
                         id=1,
                         color=np.array([0.0, 1.0, 0.0])
@@ -269,7 +262,7 @@ def main(args=None):
                     simulator.joint_positions_commanded[simulator.current_sample])
                 
             error = simulator.targetPoseExpected[simulator.current_sample] - simulator.targetPoseMeasured[simulator.current_sample]
-            #print(f"Measurement {i}: Generated successfully, Error: {error}")
+            print(f"Measurement {i}: Generated successfully, Error: {error}")
             #print(f"Measured Target Pose: {simulator.targetPoseMeasured[simulator.current_sample]}")
             simulator.current_sample += 1  
             
@@ -279,11 +272,11 @@ def main(args=None):
                 simulator.targetPoseExpected,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
+        # Save results to CSV
+        simulator.save_to_csv(filename='physical_calibration_data.csv')
     
-    # Save results to CSV
-    #simulator.save_to_csv(filename='visual_calibration_data.csv')
-    
-    print('Visual calibration simulation completed!')
+
+    print('Physical calibration simulation completed!')
     query_node.destroy_node()
     rclpy.shutdown()
 

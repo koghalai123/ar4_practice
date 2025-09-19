@@ -24,8 +24,12 @@ class CalibrationConvergenceSimulator:
     def __init__(self, n=10, numIters=10, dQMagnitude=0.1, dLMagnitude=0.0,
                  dXMagnitude=0.1, camera_mode=False, noiseMagnitude=0.00, robot = None):
         self.camera_mode = camera_mode
-            
         
+        self.measuredErrorsHistory = np.ones((numIters, 2))
+        self.estimatedTargetPoseHistory = np.ones((numIters, 6))
+        self.measuredTargetPoseHistory = np.ones((numIters*n, 6))
+        self.calibrationParameterHistory = np.ones((numIters, 18))
+
         if robot is not None:
             self.robot = robot
             self.targetPosNom, self.targetOrientNom = self.robot.from_preferred_frame(
@@ -662,13 +666,18 @@ class CalibrationConvergenceSimulator:
         errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
         
         # Apply maximum caps to the parameter estimates
-        max_dQ_cap = 5
-        max_dL_cap = 5
-        max_dX_cap = 5
+        max_dQ_cap = 0.2
+        max_dL_cap = 0.3
+        max_dX_cap = 0.15
         
         # Cap the estimates
+        j = self.current_iter
+        dLIndex = 12
+        if j==0:
+            #Skip the cap on J6 on the first iteration, since there can be a lot of variability from the end effector
+            dLIndex = 11
         errorEstimates[0:6] = np.clip(errorEstimates[0:6], -max_dQ_cap, max_dQ_cap)    # Joint corrections
-        errorEstimates[6:12] = np.clip(errorEstimates[6:12], -max_dL_cap, max_dL_cap)  # Length corrections
+        errorEstimates[6:dLIndex] = np.clip(errorEstimates[6:dLIndex], -max_dL_cap, max_dL_cap)  # Length corrections
         errorEstimates[12:18] = np.clip(errorEstimates[12:18], -max_dX_cap, max_dX_cap) # Base offset corrections
         
         return errorEstimates
@@ -685,7 +694,7 @@ class CalibrationConvergenceSimulator:
         
         errorEstimates = self.compute_calibration_parameters(
             translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot)
-            
+        
         dQEst = errorEstimates[0:6]
         self.dQMat[j, :] = dQEst
 
@@ -706,6 +715,13 @@ class CalibrationConvergenceSimulator:
         print("dXEst: ", np.sum(self.dXMat,axis=0))
         print("")
         
+        
+        self.measuredErrorsHistory[j,:] = avgTransAndRotError
+        self.estimatedTargetPoseHistory[j,:] = self.targetPoseExpected[0,:]
+        self.measuredTargetPoseHistory[self.n*(j):self.n*(j+1),:] = measurements_actual
+        temp = np.hstack((self.dQMat,self.dLMat,self.dXMat))
+        self.calibrationParameterHistory = np.cumsum(temp, axis=0)
+        
         self.resetMatrices()
         self.current_sample = 0
         
@@ -715,37 +731,34 @@ class CalibrationConvergenceSimulator:
         
     def save_to_csv(self, filename='calibrationData.csv'):
         """Save calibration data to CSV file"""
-        arrays = [self.dQ, self.dL, self.dX, np.array([self.noiseMagnitude]), np.array([self.n]), 
-                 self.avgAccMat, self.dQMat, self.dLMat, self.dXMat]
-        max_len = max(arr.shape[0] for arr in arrays)
+        j = self.current_iter
+        combined = np.hstack((
+            self.measuredErrorsHistory[:j+1, :],
+            self.estimatedTargetPoseHistory[:j+1, :],
+            self.calibrationParameterHistory[:j+1, :]
+        ))
 
-        padded = []
-        for arr in arrays:
-            arr = np.atleast_2d(arr).astype(float)  # Ensure float dtype for NaN padding
-            # If arr is shape (1, N), transpose to (N, 1) for 1D arrays
-            if arr.shape[0] == 1 and arr.shape[1] != 1 and arr.shape[1] < max_len:
-                arr = arr.T
-            pad_width = ((0, max_len - arr.shape[0]), (0, 0))
-            arr_padded = np.pad(arr, pad_width, constant_values=np.nan)
-            padded.append(arr_padded)
-
-        combined = np.hstack(padded)
-
-        columns = []
-        prefixes = ['dQ', 'dL', 'dX', 'noiseMagnitude', 'n', 'avgAccMat', 'dQMat', 'dLMat', 'dXMat']
-
-        for arr, prefix in zip(arrays, prefixes):
-            arr = np.atleast_2d(arr)
-            n_cols = arr.shape[1]
-            # For scalars or 1D arrays, just use the prefix
-            if n_cols == 1:
-                columns.append(prefix)
-            else:
-                columns.extend([f"{prefix}{i+1}" for i in range(n_cols)])
+        # Create column names
+        '''columns = (
+            [f"avgError_{i}" for i in range(self.measuredErrorsHistory.shape[1])] +
+            [f"estTargetPose_{i}" for i in range(self.estimatedTargetPoseHistory.shape[1])] +
+            [f"calibParam_{i}" for i in range(self.calibrationParameterHistory.shape[1])]
+        )'''
+        
+        columns = (
+            ["Position Error", "Orientation Error"] +
+            ["Estimated Target X", "Estimated Target Y", "Estimated Target Z", "Estimated Target Roll", "Estimated Target Pitch", "Estimated Target Yaw"] +
+            ["dQ Estimated_1", "dQ Estimated_2", "dQ Estimated_3", "dQ Estimated_4", "dQ Estimated_5", "dQ Estimated_6"] +
+            ["dL Estimated_1", "dL Estimated_2", "dL Estimated_3", "dL Estimated_4", "dL Estimated_5", "dL Estimated_6"] +
+            ["dX Estimated_1", "dX Estimated_2", "dX Estimated_3", "dX Estimated_4", "dX Estimated_5", "dX Estimated_6"]
+        )
 
         df = pd.DataFrame(combined, columns=columns)
         df.to_csv(filename, index=False)
         print(f"Data saved to {filename}")
+
+        # Optionally, save per-sample measured target poses as a separate file
+        pd.DataFrame(self.measuredTargetPoseHistory).to_csv('measuredTargetPoseHistory.csv', index=False)
 
 
 def main(args=None):
@@ -753,7 +766,7 @@ def main(args=None):
     rclpy.init()
     robot = AR4Robot()
     robot.disable_logging()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=20, numIters=10, 
                 dQMagnitude=0.0, dLMagnitude=0.0,
                  dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0, robot = robot)
     frame = "end_effector_link"
@@ -806,9 +819,9 @@ def main(args=None):
                 simulator.targetPoseExpected,
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
-    
+        simulator.save_to_csv()
     # Save results to CSV
-    #simulator.save_to_csv()
+    
     
     print('done')
 

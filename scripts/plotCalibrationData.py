@@ -1,102 +1,70 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import LogLocator, ScalarFormatter
+import numpy as np
+import os
 
-df = pd.read_csv('calibrationData.csv')
+# Load the CSV file
+csv_filename = 'physical_calibration_data_reasonable.csv'
+df = pd.read_csv(csv_filename)
 
-# Group columns by prefix
-dQ = df[[col for col in df.columns if col.startswith('dQ') and not col.startswith('dQMat')]].iloc[0,:].to_numpy()
-dL = df[[col for col in df.columns if col.startswith('dL') and not col.startswith('dLMat')]].iloc[0,:].to_numpy()
-dX = df[[col for col in df.columns if col.startswith('dX') and not col.startswith('dXMat')]].iloc[0,:].to_numpy()
-dQMat = df[[col for col in df.columns if col.startswith('dQMat')]].to_numpy()
-dLMat = df[[col for col in df.columns if col.startswith('dLMat')]].to_numpy()
-dXMat = df[[col for col in df.columns if col.startswith('dXMat')]].to_numpy()
+# Prepare output image filename base
+base_name = os.path.splitext(csv_filename)[0]
 
-# Create numpy arrays for the other (scalar) terms
-noiseMagnitude = df['noiseMagnitude'].iloc[0]
-n = df['n'].iloc[0]
-avgAccMat = df['avgAccMat']
-
-plt.figure(figsize=(10, 6))
-
-# Plot dQMat
-cmap = plt.get_cmap("Blues")
-arr =np.abs( np.cumsum(dQMat,axis=0)-dQ ) # shape: (num_rows, num_columns)
-num_cols = arr.shape[1]
-x = np.arange(arr.shape[0])  # row indices
-for i in range(num_cols):
-    color = cmap(0.3 + 0.7 * i / num_cols)  # Vary shade from lighter to darker
-    if np.abs(arr[-1, i])<0.001:
-        plt.plot(x, arr[:, i], label=f'Joint Angle Offset {i+1}', color=color)
-
-    else:
-        plt.plot(x, arr[:, i], label=f'Joint Angle Offset {i+1}', color=color, linestyle='dashed')
-
-
-
-# Plot dLMat
-cmap = plt.get_cmap("Greens")
-arr = np.abs(np.cumsum(dLMat,axis=0)-dL)  # shape: (num_rows, num_columns)
-num_cols = arr.shape[1]
-x = np.arange(arr.shape[0])  # row indices
-for i in range(num_cols):
-    color = cmap(0.3 + 0.7 * i / num_cols)  # Vary shade from lighter to darker
-    if np.abs(arr[-1, i])<0.001:
-        plt.plot(x, arr[:, i], label=f'Joint Length Change {i+1}', color=color)
-
-    else:
-        plt.plot(x, arr[:, i], label=f'Joint Length Change {i+1}', color=color, linestyle='dashed')
-
-
-# Plot dXMat
-cmap = plt.get_cmap("Purples")
-arr = np.abs(np.cumsum(dXMat,axis=0)-dX  )# shape: (num_rows, num_columns)
-num_cols = arr.shape[1]
-x = np.arange(arr.shape[0])  # row indices
-for i in range(num_cols):
-    color = cmap(0.3 + 0.7 * i / num_cols)  # Vary shade from lighter to darker
-    if np.abs(arr[-1, i])<0.001:
-        plt.plot(x, arr[:, i], label=f'Base Offset Parameters {i+1}', color=color)
-
-    else:
-        plt.plot(x, arr[:, i], label=f'Base Offset Parameters {i+1}', color=color, linestyle='dashed')
-
-plt.xlabel('Iterations')
-plt.ylabel('Difference from Actual Parameter with n=' + str(n)+'Noise Magnitude: '+ str(noiseMagnitude))
-plt.title('Iterative Linearization using Least Squares Error Calibration Results')
-
-box = plt.gca().get_position()
-plt.gca().set_position([box.x0, box.y0, box.width * 0.8, box.height])
-plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+# Plot average error values (logarithmic y-axis, more frequent ticks)
+plt.figure()
+plt.plot(df['Position Error'], label='Position Error')
+plt.plot(df['Orientation Error'], label='Orientation Error')
 plt.yscale('log')
+plt.title('Average Error Values')
+plt.xlabel('Iteration')
+plt.ylabel('Error (log scale)')
+plt.legend()
+plt.grid(True, which='both', axis='y')
 
-plt.savefig('calibrationResultsParameterError.png', dpi=300, bbox_inches='tight')
+# Find the minimum value among both error columns (ignoring zeros and negatives)
+all_errors = pd.concat([df['Position Error'], df['Orientation Error']])
+min_val = all_errors[all_errors > 0].min()
+if min_val is not None and min_val > 0:
+    lower_lim = 10**(np.log10(min_val) - 0.5)
+    plt.ylim(bottom=lower_lim)
 
+ax = plt.gca()
+ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
+ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
+ax.yaxis.set_major_formatter(ScalarFormatter())
+ax.yaxis.set_minor_formatter(ScalarFormatter())
+ax.tick_params(axis='y', which='minor', labelsize=8)
+plt.tight_layout()
+plt.savefig(f"{base_name}_avg_error.png", dpi=300)
 
+# Plot estimated target pose values (difference from final value)
+plt.figure()
+pose_cols = ['Estimated Target X', 'Estimated Target Y', 'Estimated Target Z',
+             'Estimated Target Roll', 'Estimated Target Pitch', 'Estimated Target Yaw']
+for col in pose_cols:
+    diff = df[col] - df[col].iloc[-1]
+    plt.plot(diff, label=col)
+plt.title('Estimated Target Pose (Difference from Final Value)')
+plt.xlabel('Iteration')
+plt.ylabel('Value - Final Value')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig(f"{base_name}_est_target_pose.png", dpi=300)
 
-
-
-
-plt.figure(figsize=(10, 6))
-plt.plot(np.arange(avgAccMat.shape[0]), avgAccMat, label='Avg Accuracy Error', color='black')
-plt.xlabel('Iterations')
-plt.ylabel('Average Difference from Desired Position with n=' + str(n)+'Noise Magnitude: '+ str(noiseMagnitude))
-plt.title('Average Position Error for Iterative Linearization Calibration')
-plt.yscale('log')
-
-plt.savefig('calibrationResultsAveragePositionError.png', dpi=300, bbox_inches='tight')
-
-
-
-
-
-
-
-
-
-
-
+# Plot calibration parameters (difference from final value)
+plt.figure()
+calib_cols = [col for col in df.columns if 'Estimated' in col and col not in pose_cols]
+for col in calib_cols:
+    diff = df[col] - df[col].iloc[-1]
+    plt.plot(diff, label=col)
+plt.title('Calibration Parameters (Difference from Final Value)')
+plt.xlabel('Iteration')
+plt.ylabel('Value - Final Value')
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(True)
+plt.tight_layout()
+plt.savefig(f"{base_name}_calib_params.png", dpi=300)
 
 plt.show()
-
-print('done')
