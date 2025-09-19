@@ -1,6 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, ScalarFormatter
+from matplotlib.ticker import LogLocator, ScalarFormatter, FormatStrFormatter
 import numpy as np
 import os
 
@@ -18,7 +18,7 @@ plt.plot(df['Orientation Error'], label='Orientation Error')
 plt.yscale('log')
 plt.title('Average Error Values')
 plt.xlabel('Iteration')
-plt.ylabel('Error (log scale)')
+plt.ylabel('Error [meters/radians]')
 plt.legend()
 plt.grid(True, which='both', axis='y')
 
@@ -32,8 +32,9 @@ if min_val is not None and min_val > 0:
 ax = plt.gca()
 ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
 ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
-ax.yaxis.set_major_formatter(ScalarFormatter())
-ax.yaxis.set_minor_formatter(ScalarFormatter())
+# Show more significant figures on the y axis
+ax.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
+ax.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
 ax.tick_params(axis='y', which='minor', labelsize=8)
 plt.tight_layout()
 plt.savefig(f"{base_name}_avg_error.png", dpi=300)
@@ -47,7 +48,7 @@ for col in pose_cols:
     plt.plot(diff, label=col)
 plt.title('Estimated Target Pose (Difference from Final Value)')
 plt.xlabel('Iteration')
-plt.ylabel('Value - Final Value')
+plt.ylabel('Value - Final Value [meters/radians]')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
