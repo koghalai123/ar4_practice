@@ -268,7 +268,6 @@ class CalibrationConvergenceSimulator:
     
     def generate_measurement_pose(self, robot, pose = None, calibrate=True, frame = "end_effector_link", camera_to_target_meas=None):
 
-        #FRAME IS IN THE END EFFECTOR LINK FRAME
         acceptRandom = False
         if pose is None:
             pose = np.random.uniform(-0.3, 0.3, (1, 6))[0]
