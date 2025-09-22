@@ -116,7 +116,7 @@ class CalibrationConvergenceSimulator:
         return symbolic_matrices
     
         
-    def get_homogeneous_transform(self, xyz, euler_angles, rotation_order='XYZ'):
+    def get_homogeneous_transform(self, xyz, euler_angles, rotation_order='xyz'):
         rotation = R.from_euler(rotation_order, euler_angles)
         rot_mat = rotation.as_matrix()
         transform = np.eye(4)
@@ -175,7 +175,7 @@ class CalibrationConvergenceSimulator:
         
         #self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [self.x[3], self.x[4], 0], rotation_order='XYZ')
         self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], self.x[2]], self.x[3:], rotation_order='XYZ')
-        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='XYZ')
+        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='xyz')
 
         for i in range(1, 7):
             key = "Joint" + str(i)
@@ -246,55 +246,6 @@ class CalibrationConvergenceSimulator:
         else:
             print(f"Warning: Invalid iteration index {iteration_index}. Using 0 instead.")
             self.current_iter = 0
-    
-    def get_fk_calibration_model_slow(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
-        l = self.l
-        x = self.x
-        q = self.q
-        camera_measurements = self.camera_measurements
-        '''M_num_actual = self.baseToWrist.subs({
-            **{q[k]: joint_positions[k] for k in range(6)},
-            **{l[k]: joint_lengths[k] for k in range(6)},
-            **{x[k]: XOffsets[k] for k in range(6)}
-        })   
-
-        rot_matrix = M_num_actual[:3, :3]
-        trans = np.array(M_num_actual[:3, 3]).flatten().T
-        pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        
-        
-        return pose'''
-        if self.camera_mode:
-            if camera_to_target is None:
-                camera_to_target = np.zeros(6)
-            # Camera mode: use origin to target transformation (imagined end effector)
-            subs_dict = {
-                **{q[k]: joint_positions[k] for k in range(6)},
-                **{l[k]: joint_lengths[k] for k in range(6)},
-                **{x[k]: XOffsets[k] for k in range(6)},
-                **{camera_measurements[k]: camera_to_target[k] for k in range(6)}
-            }
-            
-            #self.originToTarget
-            M_num_actual = self.originToTarget.subs(subs_dict)
-        else:
-            subs_dict = {
-                **{q[k]: joint_positions[k] for k in range(6)},
-                **{l[k]: joint_lengths[k] for k in range(6)},
-                **{x[k]: XOffsets[k] for k in range(6)}
-            }
-        M_num_actual = self.originToTarget.subs(subs_dict)
-        
-        '''M_num_inverse = wristToBase.subs({
-        **{q[j]: joint_positions[i, j] for j in range(6)},  # Substitute q variables
-        **{l[j]: joint_lengths[j] for j in range(6)}               # Substitute l variables
-        }) '''
-        rot_matrix = M_num_actual[:3, :3]
-        trans = np.array(M_num_actual[:3, 3]).flatten().T
-        pose = np.concatenate((trans, R.from_matrix(np.array(rot_matrix).astype(np.float64)).as_euler('xyz')))
-        
-        
-        return pose
     
     def get_fk_calibration_model(self, joint_positions, joint_lengths, XOffsets, camera_to_target=None):
         """Fast numerical FK computation using lambdify"""
@@ -486,68 +437,7 @@ class CalibrationConvergenceSimulator:
         
                     
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
-    
-            
-        
-    def compute_jacobians_slow(self, joint_angles, camera_to_target=None):
-        """Compute Jacobians for all measurements in current iteration
-        
-        Standard mode: Jacobian of robot end-effector pose w.r.t. parameters
-        Camera mode: Jacobian of target pose in world frame w.r.t. parameters
-        
-        Both use forward derivatives - no sign corrections needed due to consistent measurement model.
-        """
-        l = self.l
-        x = self.x
-        q = self.q
-        camera_measurements = self.camera_measurements
-        vars = list(self.q) + list(self.l) + list(self.x)
-        
-        num_measurements = 1#len(measurements_actual)
-        numJacobianTrans = np.zeros((3*num_measurements, len(vars)))
-        rotCount = 9
-        numJacobianRot = np.zeros((rotCount*num_measurements, len(vars)))
 
-        # noise = np.random.uniform(-self.noiseMagnitude, self.noiseMagnitude, (num_measurements, 6))
-        # Use only the relevant subset of commanded joint positions
-        #joint_positions = self.joint_positions_commanded[:num_measurements] #+ noise
-        joint_lengths = self.joint_lengths_nominal  # Use nominal values for Jacobian linearization
-        XOffsets = self.XNominal  # Use nominal values for Jacobian linearization
-            
-        if self.camera_mode:
-            subs_dict = {
-                **{q[k]: joint_angles[k] for k in range(6)},
-                **{l[k]: joint_lengths[k] for k in range(6)},
-                **{x[k]: XOffsets[k] for k in range(6)},
-                **{camera_measurements[k]: camera_to_target[k] for k in range(6)}
-            }
-        else:
-            subs_dict = {
-                **{q[k]: joint_angles[k] for k in range(6)},
-                **{l[k]: joint_lengths[k] for k in range(6)},
-                **{x[k]: XOffsets[k] for k in range(6)}
-            }
-        partialsTrans = self.jacobian_translation.subs(subs_dict)   
-        partialsRot = self.jacobian_rotation.subs(subs_dict)
-        
-        # No sign correction needed - measurement directions are now consistent
-            
-        i = 0
-        numJacobianTrans[3*i:3*i+3,:] = np.array(partialsTrans).astype(np.float64)
-        numJacobianRot[rotCount*i:rotCount*i+rotCount,:] = np.array(partialsRot).astype(np.float64)
-        
-        
-        if self.numJacobianTrans.size == 0:
-            self.numJacobianTrans = numJacobianTrans
-        else:
-            self.numJacobianTrans = np.vstack((self.numJacobianTrans, numJacobianTrans))
-
-        if self.numJacobianRot.size == 0:
-            self.numJacobianRot = numJacobianRot
-        else:
-            self.numJacobianRot = np.vstack((self.numJacobianRot, numJacobianRot))
-        
-        return numJacobianTrans, numJacobianRot
     def compute_jacobians(self, joint_angles, camera_to_target=None):
         """Fast numerical Jacobian computation using lambdify"""
         
@@ -727,7 +617,54 @@ class CalibrationConvergenceSimulator:
         
         return avgTransAndRotError, np.sum(self.dLMat,axis=0), self.dQ, np.sum(self.dQMat,axis=0), np.sum(self.dXMat,axis=0)
     
+    def get_new_end_effector_position(self):
+        robot=self.robot
+        random_numbers = np.random.rand(3) 
+        scale = 0.3
+        random_pos = (random_numbers-0.5)*scale
+        xOffset = 0 - scale
+        yOffset = 0
+        zOffset = robot.pos_offsets["z"] -scale*1.2
+        x = xOffset + random_pos[0]
+        y = yOffset + random_pos[1]
+        z = zOffset + random_pos[2]
+        relativeToHomeAtGround = np.array([x,y,z])
+
+        globalHomePos = np.array([robot.pos_offsets["x"],robot.pos_offsets["y"],robot.pos_offsets["z"]])
+        return relativeToHomeAtGround, random_pos, globalHomePos
+    def calculate_camera_pose(self,x, y, z, roll_offset=0.0, pitch_offset=0.0, yaw_offset=0.0):
+        # Calculate robot end effector orientation to point toward target
+        # Vector [x, y, z] is from end effector to target in world frame
         
+        # Vector from end effector to target
+        vector_to_target = np.array([x, y, z])
+        distance = np.linalg.norm(vector_to_target)
+        
+        if distance == 0:
+            return 0.0, 0.0, 0.0
+        
+        # Calculate yaw: rotation around Z axis to point in XY direction of target
+        yaw = np.arctan2(y, x)
+        
+        # Calculate pitch: elevation angle from XY plane
+        xy_distance = np.sqrt(x**2 + y**2)
+        pitch = np.arctan2(z, xy_distance)
+        
+        # Keep roll at 0 (no rotation around the pointing direction)
+        roll = 0
+
+
+        roll = np.arctan2(y, -z)#+np.pi/2
+        temp = np.sqrt(z**2 + y**2)
+        pitch = np.arctan2(x, temp) -np.pi/2
+        yaw = 0#np.pi/2
+        
+        # Apply offsets
+        roll += roll_offset
+        pitch += pitch_offset
+        yaw += yaw_offset
+        
+        return roll, pitch, yaw
         
     def save_to_csv(self, filename='calibrationData.csv'):
         """Save calibration data to CSV file"""

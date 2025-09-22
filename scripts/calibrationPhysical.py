@@ -20,90 +20,8 @@ import cProfile
 import pstats
 import io
 
-def get_new_end_effector_position(robot):
-    random_numbers = np.random.rand(3) 
-    scale = 0.3
-    random_pos = (random_numbers-0.5)*scale
-    xOffset = 0 - scale
-    yOffset = 0
-    zOffset = robot.pos_offsets["z"] -scale*1.2
-    x = xOffset + random_pos[0]
-    y = yOffset + random_pos[1]
-    z = zOffset + random_pos[2]
-    relativeToHomeAtGround = np.array([x,y,z])
-
-    globalHomePos = np.array([robot.pos_offsets["x"],robot.pos_offsets["y"],robot.pos_offsets["z"]])
-    return relativeToHomeAtGround, random_pos, globalHomePos
-def calculate_camera_pose(x, y, z, roll_offset=0.0, pitch_offset=0.0, yaw_offset=0.0):
-    # Calculate robot end effector orientation to point toward target
-    # Vector [x, y, z] is from end effector to target in world frame
-    
-    # Vector from end effector to target
-    vector_to_target = np.array([x, y, z])
-    distance = np.linalg.norm(vector_to_target)
-    
-    if distance == 0:
-        return 0.0, 0.0, 0.0
-    
-    # Calculate yaw: rotation around Z axis to point in XY direction of target
-    yaw = np.arctan2(y, x)
-    
-    # Calculate pitch: elevation angle from XY plane
-    xy_distance = np.sqrt(x**2 + y**2)
-    pitch = np.arctan2(z, xy_distance)
-    
-    # Keep roll at 0 (no rotation around the pointing direction)
-    roll = 0
 
 
-    roll = np.arctan2(y, -z)#+np.pi/2
-    temp = np.sqrt(z**2 + y**2)
-    pitch = np.arctan2(x, temp) -np.pi/2
-    yaw = 0#np.pi/2
-    
-    # Apply offsets
-    roll += roll_offset
-    pitch += pitch_offset
-    yaw += yaw_offset
-    
-    return roll, pitch, yaw
-
-
-def print_current_position(robot,frame):
-    current_pose = robot.get_current_pose(frame)
-    position, orientation = current_pose
-    robot.get_logger().info(f"Current Pose: Position={position}, Orientation={orientation}")
-
-def camera_vector_from_pose_and_measurement(roll, pitch, yaw, distance):
-    """
-    Calculate a vector to target given orientation angles and distance.
-    
-    Parameters:
-    - roll: Roll angle in radians
-    - pitch: Pitch angle in radians
-    - yaw: Yaw angle in radians
-    - distance: Distance to the target
-    
-    Returns:
-    - numpy array [x, y, z]: Vector pointing to the target
-    """
-    # First, understand the relationship between the angles and the direction vector
-    # If we have pitch = -arctan2(x, z) - π/2, then x/z = -tan(pitch + π/2)
-    # Similarly for roll = -arctan2(y, r), where r = sqrt(x^2 + z^2), then y/r = -tan(roll)
-    
-    # Calculate the vector components based on the spherical coordinates
-    x_direction = -np.sin(pitch + np.pi/2) * np.cos(roll)
-    y_direction = -np.sin(roll) * np.cos(pitch + np.pi/2)
-    z_direction = np.cos(pitch + np.pi/2) * np.cos(roll)
-    
-    # Normalize the direction vector
-    direction = np.array([x_direction, y_direction, z_direction])
-    direction = direction / np.linalg.norm(direction)
-    
-    # Scale by the distance
-    vector = direction * distance
-    
-    return vector
 
 def query_aruco_pose(node):
     """Query the latest ArUco pose using ROS2 API - returns position and euler angles"""
@@ -185,15 +103,13 @@ def main(args=None):
             successfulMeasurement = False
             while successfulMeasurement is False:
                 # Generate random end-effector position pointing toward target
-                relativeToHomeAtGround, relativeToHomePos, globalHomePos = get_new_end_effector_position(robot)
+                relativeToHomeAtGround, relativeToHomePos, globalHomePos = simulator.get_new_end_effector_position()
 
                 globalEndEffectorPos = relativeToHomePos + globalHomePos
-                
-                # Calculate camera orientation to point at target
-                # Vector should point FROM camera TO target
+
                 targetPosEstNiceFrame, temp = simulator.robot.to_preferred_frame(simulator.targetPosEst,simulator.targetOrientEst)
                 vectorToTarget = targetPosEstNiceFrame - globalEndEffectorPos
-                roll, pitch, yaw = calculate_camera_pose(vectorToTarget[0], 
+                roll, pitch, yaw = simulator.calculate_camera_pose(vectorToTarget[0], 
                                                          vectorToTarget[1], 
                                                          vectorToTarget[2],
                                                          )
