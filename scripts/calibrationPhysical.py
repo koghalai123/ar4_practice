@@ -19,6 +19,8 @@ import time
 import cProfile
 import pstats
 import io
+import subprocess
+
 
 
 
@@ -58,8 +60,41 @@ def query_aruco_pose(node):
     return np.concatenate([position, euler_angles])
 
 
+def launchMoveIt():
+    moveit_cmd = [
+        "ros2", "launch", "annin_ar4_moveit_config", "moveit.launch.py",
+        "use_sim_time:=true", "include_gripper:=False"
+    ]
+
+    # Launch MoveIt2 in a new GNOME terminal window
+    moveItProcess = subprocess.Popen([
+        "gnome-terminal", "--", "bash", "-c",
+        " ".join(moveit_cmd) + "; exec bash"
+    ])
+    return moveItProcess
+        
+def restartMoveIt(moveItProcess):
+    moveit_cmd = [
+        "ros2", "launch", "annin_ar4_moveit_config", "moveit.launch.py",
+        "use_sim_time:=true", "include_gripper:=False"
+    ]
+    print("Restarting MoveIt2...")
+
+    moveItProcess.terminate()
+    try:
+        moveItProcess.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        moveItProcess.kill()
+    moveItProcess = subprocess.Popen([
+        "gnome-terminal", "--", "bash", "-c",
+        " ".join(moveit_cmd) + "; exec bash"
+    ])
+    return moveItProcess
 
 def main(args=None):
+
+    moveItProcess = launchMoveIt()
+
     rclpy.init(args=args)
     
     # Create a minimal node for querying topics
@@ -72,11 +107,12 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=25, numIters=12, 
+    simulator = CalibrationConvergenceSimulator(n=25, numIters=20, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot
     simulator.dLMat[0,5] = 1.25
+    lastMotionSuccess = time.time()
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
             np.array([0.28,-0.03,0]),np.array([np.pi,-np.pi/2,0]))
@@ -131,10 +167,16 @@ def main(args=None):
                 if motion1Succeeded:
                     motionSucceeded = robot.move_to_joint_positions(joint_positions_est)
                 else:
+                    if time.time() - lastMotionSuccess > 8:
+                        moveItProcess = restartMoveIt(moveItProcess)
+                        lastMotionSuccess = time.time()  # Reset timer after restart
                     continue
+                
+
                 if motionSucceeded:
                     for k in range(1):
                         time.sleep(0.2)
+                        lastMotionSuccess = time.time()
                         arucoSensedPose = query_aruco_pose(query_node)
                         if arucoSensedPose is None:
                             continue

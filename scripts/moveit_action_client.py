@@ -457,3 +457,21 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+    
+    """def reset_new_joint_state_checker(self):
+        #Reset checker of the new joint state.
+
+        self.__joint_state_mutex.acquire()
+        self.__new_joint_state_available = False
+        self.__joint_state_mutex.release()
+
+    def force_reset_executing_state(self):
+        
+        #Force reset of internal states that block execution while `ignore_new_calls_while_executing` is being
+        #used. This function is applicable only in a very few edge-cases, so it should almost never be used.
+        
+
+        self.__execution_mutex.acquire()
+        self.__is_motion_requested = False
+        self.__is_executing = False
+        self.__execution_mutex.release()"""
