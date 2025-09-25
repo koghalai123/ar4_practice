@@ -107,7 +107,7 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=25, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=10, numIters=20, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot

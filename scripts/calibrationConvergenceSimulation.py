@@ -174,8 +174,8 @@ class CalibrationConvergenceSimulator:
         self.camera_measurements = sp.symbols('c1:7')
         
         #self.originToBase = self.symbolic_transform_with_ref_frames(self.x[0:3], [self.x[3], self.x[4], 0], rotation_order='XYZ')
-        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], self.x[2]], self.x[3:], rotation_order='XYZ')
-        self.originToBaseActual = self.get_homogeneous_transform(self.XActual[0:3], [0,0,0], rotation_order='xyz')
+        self.originToBase = self.symbolic_transform_with_ref_frames([self.x[0], self.x[1], 0.0], self.x[3:], rotation_order='XYZ')
+        self.originToBaseActual = self.get_homogeneous_transform([self.XActual[0],self.XActual[1],0.0], [0,0,0], rotation_order='xyz')
 
         for i in range(1, 7):
             key = "Joint" + str(i)
@@ -556,8 +556,8 @@ class CalibrationConvergenceSimulator:
         
         # Apply maximum caps to the parameter estimates
         max_dQ_cap = 0.2
-        max_dL_cap = 0.3
-        max_dX_cap = 0.15
+        max_dL_cap = 5
+        max_dX_cap = 0.4
         
         # Cap the estimates
         j = self.current_iter
@@ -702,7 +702,7 @@ def main(args=None):
     rclpy.init()
     robot = AR4Robot()
     robot.disable_logging()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=10, 
+    simulator = CalibrationConvergenceSimulator(n=20, numIters=6, 
                 dQMagnitude=0.0, dLMagnitude=0.0,
                  dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0, robot = robot)
     frame = "end_effector_link"

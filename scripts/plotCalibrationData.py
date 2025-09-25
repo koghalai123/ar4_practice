@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 # Load the CSV file
-csv_filename = 'physical_calibration_data_reasonable.csv'
+csv_filename = 'physical_calibration_data_long.csv'
 df = pd.read_csv(csv_filename)
 
 # Prepare output image filename base
