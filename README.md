@@ -36,6 +36,10 @@ sudo apt install ros-$ROS_DISTRO-ament-cmake ros-$ROS_DISTRO-ament-cmake-python
 
 sudo apt install ros-jazzy-controller-manager
 
+sudo apt install ros-jazzy-ros-gz-sim
+
+sudo apt install ros-jazzy-ros-gz-bridge
+
 source /opt/ros/jazzy/setup.bash
 
 colcon build
