@@ -30,6 +30,10 @@ cd ~/ar4_ws
 
 rosdep install --from-paths . --ignore-src -r -y
 
+sudo apt update
+
+sudo apt install ros-$ROS_DISTRO-ament-cmake ros-$ROS_DISTRO-ament-cmake-python
+
 colcon build
 
 source install/setup.bash
