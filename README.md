@@ -1,5 +1,7 @@
 # Installation instructions
 
+This needs to run on linux. You can 'dual boot' your computer so that you can boot into either your standard OS or Linux. This link gives a reasonable guide on how to do it: https://www.tomshardware.com/software/linux/how-to-dual-boot-linux-and-windows-on-any-pc. I have personally tried Ubuntu 24.04 and Linux Mint Cinnamon 22.2(which was built from Ubuntu 24). Linux Mint is based on Ubuntu, so most programs that work on Ubuntu will also work on the corresponding version of Linux Mint.
+
 Make sure ROS 2 Jazzy(https://docs.ros.org/en/jazzy/Installation/Alternatives/Ubuntu-Development-Setup.html), Moveit2(for Jazzy), and Gazebo Sim(Harmonic) are installed. To install ROS 2, you need to go to the provided link and install it. For the other two, the following commands work.
 
 sudo apt install ros-jazzy-moveit
