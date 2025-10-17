@@ -54,33 +54,11 @@ echo "source ar4_ws/install/setup.bash" >> ~/.bashrc
 
 source install/setup.bash
 
-# To run in Docker on Linux: 
-Install VS Code(not Visual Studio, you need Visual Studio Code). Copy the Dockerfile from this repo into a folder on your computer. Use VS Code to open that folder, then open a terminal window within VS Code. You may need to install Docker and WSL related extensions within VS Code(You can find them from the buttons towards the left of the VS Code GUI). Use the instructions here to install Docker for Ubuntu: https://docs.docker.com/engine/install/ubuntu/. Then run the following code in the terminal window to create a Docker image and run the container(if there are any issues with this step, let me know):
+sudo apt install python3-pip
 
-sudo usermod -aG docker $USER
+sudo apt install ros-jazzy-tf-transformations
 
-sudo docker build -t ar4_sim .
-
-sudo apt update
-
-sudo apt install x11-xserver-utils mesa-utils
-
-xhost +local:docker
-
-docker run -it --rm \
-  -p 8080:8080 \
-  -p 11345:11345 \
-  -p 6080:6080 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -e DISPLAY=$DISPLAY \
-  -v "$HOME/.Xauthority:/root/.Xauthority:rw" \
-  -e QT_X11_NO_MITSHM=1 \
-  --privileged \
-  ar4_sim
-
-Install the Docker and Dev Containers extensions for VS Code on the new VS Code instance and you should see a container available for usage.
-
-To open multiple terminal windows within VSCode, there is a "+" button in the terminal area which will allow you to open multiple instances, which is necessary to run multiple programs at a time for controlling or simulating the robot.
+pip install pandas --break-system-packages
 
 # To give actual commands to the physical robot(each in its own terminal window): 
 ros2 launch annin_ar4_driver driver.launch.py calibrate:=True include_gripper:=True
