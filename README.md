@@ -40,6 +40,10 @@ source /opt/ros/jazzy/setup.bash
 
 colcon build
 
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+
+echo "source ar4_ws/install/setup.bash" >> ~/.bashrc
+
 source install/setup.bash
 
 # To run in Docker on Linux: 
