@@ -34,6 +34,10 @@ sudo apt update
 
 sudo apt install ros-$ROS_DISTRO-ament-cmake ros-$ROS_DISTRO-ament-cmake-python
 
+sudo apt install ros-jazzy-controller-manager
+
+source /opt/ros/jazzy/setup.bash
+
 colcon build
 
 source install/setup.bash
