@@ -9,7 +9,7 @@ sudo apt install ros-jazzy-moveit
 sudo apt-get install ros-${ROS_DISTRO}-ros-gz
 ```
 Next, set up a workspace and get necessary code installed:
-
+```
 mkdir -p ~/ar4_ws/src
 
 cd ~/ar4_ws/src
@@ -61,35 +61,39 @@ sudo apt install python3-pip
 sudo apt install ros-jazzy-tf-transformations
 
 pip install pandas --break-system-packages
-
+```
 # To give actual commands to the physical robot(each in its own terminal window): 
+```
 ros2 launch annin_ar4_driver driver.launch.py calibrate:=True include_gripper:=True
 
 ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
 
 ros2 run ar4_practice joint_commander.py
 
-
+```
 
 # To give commands for gazebo simulation(each in its own terminal window): 
+```
 ros2 launch annin_ar4_gazebo gazebo.launch.py
 
 ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
 
 ros2 run ar4_practice joint_commander.py
-
+```
 # To plot the workplace envelope in gazebo(each in its own terminal window): 
+```
 ros2 launch annin_ar4_gazebo gazebo.launch.py
 
 ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
-
+```
 Run "surfacePublisher.py" either through ROS2 or simply through python and add the surface publisher topic to the Rviz2 display to see the envelope. You need the faces.csv and vertices.csv files created through other scripts as well though.
 
 
 # To display the work envelope and find the test cube, some additional packages are needed:
-
+```
 pip install shapely trimesh open3d alphashape descartes numpy-stl "pyglet<2" --break-system-packages
-
+```
 # To start Realsense node: 
-
+```
 ros2 run realsense2_camera realsense2_camera_node
+```
