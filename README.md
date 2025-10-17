@@ -40,6 +40,10 @@ sudo apt install ros-jazzy-ros-gz-sim
 
 sudo apt install ros-jazzy-ros-gz-bridge
 
+sudo apt install ros-jazzy-gz-ros2-control
+
+sudo apt install ros-jazzy-ros2-control ros-jazzy-ros2-controllers
+
 source /opt/ros/jazzy/setup.bash
 
 colcon build
