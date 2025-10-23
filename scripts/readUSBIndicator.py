@@ -1,83 +1,93 @@
 #!/usr/bin/env python3
 
-import hid
+import serial
+import serial.tools.list_ports
 import time
 import sys
 from datetime import datetime
 
-def find_holtek_device():
-    """Find the specific Holtek HID device"""
-    target_vid = 0x04d9  # Holtek Semiconductor, Inc.
-    target_pid = 0x1702  # Keyboard LKS02
+def find_prolific_device():
+    """Find the specific Prolific PL2303 device"""
+    # Look for the specific Prolific device by vendor/product ID
+    target_vid = 0x067b  # Prolific Technology, Inc.
+    target_pid = 0x2303  # PL2303 Serial Port
     
-    # List all HID devices
-    devices = hid.enumerate()
-    
-    for device in devices:
-        if device['vendor_id'] == target_vid and device['product_id'] == target_pid:
-            return device
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        # Check if this port matches our target device
+        if (hasattr(port, 'vid') and hasattr(port, 'pid') and 
+            port.vid == target_vid and port.pid == target_pid):
+            return port.device
+        
+        # Also check description for Prolific or PL2303
+        if port.description and ('Prolific' in port.description or 'PL2303' in port.description):
+            return port.device
     
     return None
 
 def main():
-    """Simple USB HID reader for Holtek device"""
+    """Simple USB serial reader for Prolific PL2303 device"""
     
-    # Find the specific Holtek device
-    device_info = find_holtek_device()
+    # Find the specific Prolific device
+    port = find_prolific_device()
     
-    if device_info is None:
-        print("Holtek LKS02 device not found!")
-        print("Looking for: VID:PID = 04d9:1702")
-        print("\nAvailable HID devices:")
-        devices = hid.enumerate()
-        for device in devices:
-            print(f"  VID:PID = {device['vendor_id']:04x}:{device['product_id']:04x} - {device['manufacturer_string']} {device['product_string']}")
+    if port is None:
+        print("Prolific PL2303 device not found!")
+        print("Looking for: Bus 007 Device 003: ID 067b:2303 Prolific Technology, Inc. PL2303")
+        print("\nAvailable ports:")
+        for p in serial.tools.list_ports.comports():
+            vid_pid = f"VID:PID = {p.vid:04x}:{p.pid:04x}" if p.vid and p.pid else "No VID/PID"
+            print(f"  {p.device} - {p.description} ({vid_pid})")
         sys.exit(1)
     
-    # Connect to the Holtek device
+    # Connect to the Prolific device
     try:
-        h = hid.device()
-        h.open(device_info['vendor_id'], device_info['product_id'])
-        
-        print(f"Connected to Holtek LKS02:")
-        print(f"  Manufacturer: {device_info['manufacturer_string']}")
-        print(f"  Product: {device_info['product_string']}")
-        print(f"  VID:PID = {device_info['vendor_id']:04x}:{device_info['product_id']:04x}")
-        print("Reading HID data... (Press Ctrl+C to stop)")
+        ser = serial.Serial(port, 9600, timeout=1)
+        print(f"Connected to Prolific PL2303 on {port} at 9600 baud")
+        print("Reading numeric data... (Press Ctrl+C to stop)")
         print("-" * 50)
         
-        # Set non-blocking mode
-        h.set_nonblocking(1)
+        buffer = b""  # Buffer to accumulate data
         
         while True:
-            # Read data from HID device
-            data = h.read(64)  # Read up to 64 bytes
-            
-            if data:
-                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                # Convert bytes to hex string for debugging
-                hex_data = ' '.join([f'{b:02x}' for b in data])
-                print(f"[{timestamp}] Raw: {hex_data}")
+            if ser.in_waiting > 0:
+                data = ser.read(ser.in_waiting)
+                buffer += data
                 
-                # Try to interpret as text (you may need to adjust this based on your device)
-                try:
-                    text_data = ''.join([chr(b) for b in data if 32 <= b <= 126])
-                    if text_data.strip():
-                        print(f"[{timestamp}] Text: {text_data.strip()}")
-                except:
-                    pass
+                # Process complete readings (ending with \r)
+                while b'\r' in buffer:
+                    line, buffer = buffer.split(b'\r', 1)
+                    
+                    # Skip the first null byte if present
+                    if line.startswith(b'\x00'):
+                        line = line[1:]
+                    
+                    if line:
+                        try:
+                            # Decode and convert to float
+                            reading_str = line.decode('ascii', errors='ignore').strip()
+                            if reading_str:
+                                reading_value = float(reading_str)
+                                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                                print(f"[{timestamp}] {reading_value:+8.3f}")
+                        except ValueError:
+                            # Skip invalid readings
+                            pass
             
             time.sleep(0.01)
             
     except KeyboardInterrupt:
         print("\nStopping...")
+    except PermissionError:
+        print(f"Permission denied accessing {port}")
+        print("Try: sudo usermod -a -G dialout $USER")
+        print("Then log out and back in.")
     except Exception as e:
         print(f"Error: {e}")
-        print("You may need to run with sudo or add udev rules for HID device access")
     finally:
-        if 'h' in locals():
-            h.close()
-            print("Disconnected from Holtek device")
+        if 'ser' in locals():
+            ser.close()
+            print(f"Disconnected from {port}")
 
 if __name__ == "__main__":
     main()
