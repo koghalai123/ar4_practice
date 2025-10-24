@@ -19,6 +19,7 @@ import time
 import cProfile
 import pstats
 import io
+import pickle
 
 def main(args=None):
     rclpy.init()
@@ -28,9 +29,9 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=7, numIters=10, 
-                                               dQMagnitude=0.1, dLMagnitude=0.01, 
-                                               dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.00, robot = robot)
+    simulator = CalibrationConvergenceSimulator(n=7, numIters=1, 
+                                               dQMagnitude=0.01, dLMagnitude=0.01, 
+                                               dXMagnitude=0.01, camera_mode=True, noiseMagnitude=0.00, robot = robot)
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
             np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
@@ -125,7 +126,35 @@ def main(args=None):
     
     # Save results to CSV
     #simulator.save_to_csv(filename='visual_calibration_data.csv')
-    
+    simulator_data = {
+        'targetPosEst': simulator.targetPosEst,
+        'targetOrientEst': simulator.targetOrientEst,
+        'targetPosActual': simulator.targetPosActual,
+        'targetOrientActual': simulator.targetOrientActual,
+        'targetPosNom': simulator.targetPosNom,
+        'targetOrientNom': simulator.targetOrientNom,
+        'targetPoseMeasured': getattr(simulator, 'targetPoseMeasured', None),
+        'targetPoseExpected': getattr(simulator, 'targetPoseExpected', None),
+        'numJacobianTrans': getattr(simulator, 'numJacobianTrans', None),
+        'numJacobianRot': getattr(simulator, 'numJacobianRot', None),
+        'joint_positions_commanded': getattr(simulator, 'joint_positions_commanded', None),
+        'joint_positions_actual': getattr(simulator, 'joint_positions_actual', None),
+        'camera_to_target_meas_test': getattr(simulator, 'camera_to_target_meas_test', None),
+        'n': simulator.n,
+        'numIters': simulator.numIters,
+        'camera_mode': simulator.camera_mode,
+        'dQMagnitude': simulator.dQMagnitude,
+        'dLMagnitude': simulator.dLMagnitude,
+        'dXMagnitude': simulator.dXMagnitude,
+        'noiseMagnitude': simulator.noiseMagnitude,
+        'dX': getattr(simulator, 'dX', None),
+        'current_sample': getattr(simulator, 'current_sample', 0),
+        'current_iteration': getattr(simulator, 'current_iteration', 0)
+    }
+
+    with open('simulator_state.pkl', 'wb') as f:
+        pickle.dump(simulator_data, f)
+
     print('Visual calibration simulation completed!')
     rclpy.shutdown()
 
