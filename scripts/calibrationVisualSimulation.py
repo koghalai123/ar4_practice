@@ -11,6 +11,8 @@ from geometry_msgs.msg import Quaternion, Point, Pose
 from surface_publisher import SurfacePublisher
 from ar4_robot_py import AR4Robot
 from calibrationConvergenceSimulation import CalibrationConvergenceSimulator
+from loadCalibration import save_simulator
+
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
 import csv
@@ -29,9 +31,9 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=7, numIters=1, 
-                                               dQMagnitude=0.01, dLMagnitude=0.01, 
-                                               dXMagnitude=0.01, camera_mode=True, noiseMagnitude=0.00, robot = robot)
+    simulator = CalibrationConvergenceSimulator(n=7, numIters=4, 
+                                               dQMagnitude=0.1, dLMagnitude=0.01, 
+                                               dXMagnitude=0.05, camera_mode=True, noiseMagnitude=0.00, robot = robot)
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
             np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))
@@ -126,7 +128,7 @@ def main(args=None):
     
     # Save results to CSV
     #simulator.save_to_csv(filename='visual_calibration_data.csv')
-    simulator_data = {
+    '''simulator_data = {
         'targetPosEst': simulator.targetPosEst,
         'targetOrientEst': simulator.targetOrientEst,
         'targetPosActual': simulator.targetPosActual,
@@ -153,10 +155,11 @@ def main(args=None):
     }
 
     with open('simulator_state.pkl', 'wb') as f:
-        pickle.dump(simulator_data, f)
-
-    print('Visual calibration simulation completed!')
+        pickle.dump(simulator_data, f)'''
     rclpy.shutdown()
+    save_simulator(simulator)
+    
+    print('Visual calibration simulation completed!')
 
 def profile_main():
     pr = cProfile.Profile()

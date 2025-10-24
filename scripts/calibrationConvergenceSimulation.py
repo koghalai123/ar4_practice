@@ -437,6 +437,21 @@ class CalibrationConvergenceSimulator:
                     
         return pose_actual, pose_commanded, joint_positions_actual, joint_positions_commanded
 
+    def moveToPose(self, position, orientation, calibrate=True):
+        frame = "base_link"
+        joint_positions_ik = self.robot.get_ik(position=position, euler_angles=orientation, frame_id=frame)
+        if joint_positions_ik is None:
+            print("IK solution not found for the given pose.")
+            return
+
+        if calibrate:
+            joint_positions = joint_positions_ik - np.sum(self.dQMat, axis=0) + self.dQ
+        else:
+            joint_positions = joint_positions_ik + self.dQ
+
+        self.robot.move_to_joint_positions(joint_positions)
+
+
     def compute_jacobians(self, joint_angles, camera_to_target=None):
         """Fast numerical Jacobian computation using lambdify"""
         
