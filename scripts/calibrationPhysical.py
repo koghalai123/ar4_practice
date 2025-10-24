@@ -20,6 +20,7 @@ import cProfile
 import pstats
 import io
 import subprocess
+from loadCalibration import save_simulator
 
 
 
@@ -237,6 +238,7 @@ def main(args=None):
     print('Physical calibration simulation completed!')
     query_node.destroy_node()
     rclpy.shutdown()
+    save_simulator(simulator)
 
 def profile_main():
     pr = cProfile.Profile()
