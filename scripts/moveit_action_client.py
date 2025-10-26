@@ -57,6 +57,10 @@ class MoveItActionClient(Node):
             rclpy.spin_once(self, timeout_sec=0.1)
         self.log_info("Joint states received")
     
+        # Add failure counter
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 20
+    
     def log_info(self, message):
         if self.logging_enabled:
             self.get_logger().info(message)
@@ -213,11 +217,11 @@ class MoveItActionClient(Node):
                 'joint_3': (math.radians(-89), math.radians(52)),     # -1.553 to 0.908 rad
                 'joint_4': (math.radians(-180), math.radians(180)),   # -3.142 to 3.142 rad
                 'joint_5': (math.radians(-105), math.radians(105)),   # -1.833 to 1.833 rad
-                'joint_6': (math.radians(-200), math.radians(200))    # -3.142 to 3.142 rad
+                'joint_6': (math.radians(-220), math.radians(220))    # -3.142 to 3.142 rad
             }
             
             # Safety margin from limits (in radians) - adjust as needed
-            safety_margin = 0.05
+            safety_margin = 0.02
             
             # Convert to dictionary if it's a list
             joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
@@ -248,7 +252,7 @@ class MoveItActionClient(Node):
             # Create motion plan request
             req = MotionPlanRequest()
             req.group_name = self.group_name
-            req.num_planning_attempts = 10
+            req.num_planning_attempts = 20
             req.max_velocity_scaling_factor = velocity_scaling
             req.max_acceleration_scaling_factor = acceleration_scaling
             req.allowed_planning_time = 10.0
@@ -261,8 +265,8 @@ class MoveItActionClient(Node):
                 constraint = JointConstraint()
                 constraint.joint_name = joint_name
                 constraint.position = position
-                constraint.tolerance_above = 0.0001
-                constraint.tolerance_below = 0.0001
+                constraint.tolerance_above = 0.003
+                constraint.tolerance_below = 0.003
                 constraint.weight = 1.0
                 joint_constraints.append(constraint)
             
@@ -309,16 +313,20 @@ class MoveItActionClient(Node):
             
             # Wait for the result
             result_future = goal_handle.get_result_async()
-            rclpy.spin_until_future_complete(self, result_future, timeout_sec=30.0)
+            rclpy.spin_until_future_complete(self, result_future, timeout_sec=5.0)
             
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS
                 self.log_info("Movement completed successfully!")
+                self.consecutive_failures = 0  # Reset failure counter
                 return True
             else:
                 error_code = result.result.error_code.val if result else "Unknown"
                 self.log_error(f"Movement failed with error code: {error_code}")
+
                 return False
+            
+            return False
                 
         except Exception as e:
             self.log_error(f"Error in move_to_joint_configuration: {str(e)}")
@@ -436,6 +444,8 @@ class MoveItActionClient(Node):
             error_code = result.result.error_code.val if result else "Unknown"
             self.log_error(f"Movement failed with error code: {error_code}")
             return False
+    
+    
 
 def main(args=None):
     rclpy.init()

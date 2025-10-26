@@ -22,6 +22,7 @@ import io
 import subprocess
 from loadCalibration import save_simulator
 
+import copy
 
 
 
@@ -60,7 +61,29 @@ def query_aruco_pose(node):
 
     return np.concatenate([position, euler_angles])
 
-
+def kill_ros2_nodes():
+    """Kill specific ROS2 nodes related to MoveIt"""
+    nodes_to_kill = [
+        'move_group',
+        'planning_scene_monitor', 
+        'trajectory_execution_manager'
+    ]
+    
+    for node_name in nodes_to_kill:
+        try:
+            result = subprocess.run([
+                'ros2', 'node', 'list'
+            ], capture_output=True, text=True, timeout=5)
+            
+            if node_name in result.stdout:
+                print(f"Killing ROS2 node: {node_name}")
+                subprocess.run([
+                    'ros2', 'lifecycle', 'set', f'/{node_name}', 'shutdown'
+                ], timeout=3)
+        except subprocess.TimeoutExpired:
+            print(f"Timeout killing node {node_name}")
+        except Exception as e:
+            print(f"Error killing node {node_name}: {e}")
 def launchMoveIt():
     moveit_cmd = [
         "ros2", "launch", "annin_ar4_moveit_config", "moveit.launch.py",
@@ -72,6 +95,7 @@ def launchMoveIt():
         "gnome-terminal", "--", "bash", "-c",
         " ".join(moveit_cmd) + "; exec bash"
     ])
+    time.sleep(4)
     return moveItProcess
         
 def restartMoveIt(moveItProcess):
@@ -80,6 +104,11 @@ def restartMoveIt(moveItProcess):
         "use_sim_time:=true", "include_gripper:=False"
     ]
     print("Restarting MoveIt2...")
+
+    subprocess.run(["pkill", "-f", "moveit.launch.py"], timeout=5)
+    subprocess.run(["pkill", "-f", "move_group"], timeout=5)
+    subprocess.run(["pkill", "-f", "planning_scene_monitor"], timeout=5)
+    subprocess.run(["pkill", "-f", "trajectory_execution_manager"], timeout=5)
 
     moveItProcess.terminate()
     try:
@@ -90,6 +119,7 @@ def restartMoveIt(moveItProcess):
         "gnome-terminal", "--", "bash", "-c",
         " ".join(moveit_cmd) + "; exec bash"
     ])
+    time.sleep(8)  
     return moveItProcess
 
 def main(args=None):
@@ -108,7 +138,7 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=20, 
+    simulator = CalibrationConvergenceSimulator(n=10, numIters=6, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot
@@ -116,7 +146,7 @@ def main(args=None):
     lastMotionSuccess = time.time()
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
-            np.array([0.28,-0.03,0]),np.array([np.pi,-np.pi/2,0]))
+            np.array([0.45,0.0,0]),np.array([np.pi,-np.pi/2,0]))
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
         simulator.targetPosEst = simulator.targetPosNom
@@ -170,6 +200,7 @@ def main(args=None):
                 else:
                     if time.time() - lastMotionSuccess > 8:
                         moveItProcess = restartMoveIt(moveItProcess)
+                        simulator.robot.move_to_home()
                         lastMotionSuccess = time.time()  # Reset timer after restart
                     continue
                 
@@ -233,6 +264,11 @@ def main(args=None):
                 simulator.numJacobianRot)
         # Save results to CSV
         simulator.save_to_csv(filename='physical_calibration_data.csv')
+        simulator.robot = None
+
+        simulator_copy = copy.deepcopy(simulator)
+        simulator.robot = robot
+        save_simulator(simulator_copy, filename=f'simulator_state_iter_{j}.pkl')
     
 
     print('Physical calibration simulation completed!')

@@ -184,7 +184,7 @@ class CalibrationConvergenceSimulator:
             translation_vector = symbolic_matrix[:3, 3]
             norm_symbolic = sp.sqrt(sum(component**2 for component in translation_vector))
             self.LMat[0, i - 1] = norm_symbolic
-            symbolic_matrix[:3,3]=symbolic_matrix[:3,3]*self.l[i-1]
+            symbolic_matrix[:3,3]=symbolic_matrix[:3,3]#*self.l[i-1]
             self.baseToWrist = self.baseToWrist * symbolic_matrix
             self.wristToBase = symbolic_matrix.inv() * self.wristToBase
             self.symbolic_matrices[key] = symbolic_matrix
@@ -634,7 +634,7 @@ class CalibrationConvergenceSimulator:
     def get_new_end_effector_position(self):
         robot=self.robot
         random_numbers = np.random.rand(3) 
-        scale = 0.3
+        scale = 0.25
         random_pos = (random_numbers-0.5)*scale
         xOffset = 0 - scale
         yOffset = 0
@@ -717,8 +717,8 @@ def main(args=None):
     rclpy.init()
     robot = AR4Robot()
     robot.disable_logging()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=6, 
-                dQMagnitude=0.0, dLMagnitude=0.0,
+    simulator = CalibrationConvergenceSimulator(n=20, numIters=12, 
+                dQMagnitude=0.1, dLMagnitude=0.0,
                  dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0, robot = robot)
     frame = "end_effector_link"
 

@@ -11,8 +11,19 @@ from rclpy.node import Node
 from std_msgs.msg import String, Float64
 from geometry_msgs.msg import Point
 
+
+
+
+#device 3 is x
+#device 2 is -z
+#device 1 is -y
+
+
+
 # Linux input ioctl constants
 EVIOCGRAB = 0x40044590
+
+
 
 # Numpad key codes mapping
 NUMPAD_KEYS = {
@@ -27,7 +38,9 @@ class NumberBuffer:
     def __init__(self):
         self.buffer = []
         self.decimal_entered = False
-    
+
+        self.last_number = None
+
     def add_key(self, key_char):
         """Add a key to the buffer"""
         if key_char == '.':
@@ -137,7 +150,7 @@ class KeyboardDevice:
                         # Get the current input BEFORE clearing
                         current_input = self.number_buffer.get_current_input()
                         number = self.number_buffer.get_number()
-                        
+                        self.last_number = number
                         # Publish the completed number BEFORE clearing
                         if self.ros_node and number is not None:
                             self.ros_node.publish_input(self.device_id, number, current_input)
@@ -333,7 +346,7 @@ def main(args=None):
                 node.get_logger().error("No usable keyboard devices found")
                 return
         
-        # Publish initial device status
+       #device status
         node.publish_device_status()
         
         # Start the ROS2 node
