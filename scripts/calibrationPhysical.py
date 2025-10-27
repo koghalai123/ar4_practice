@@ -146,7 +146,7 @@ def main(args=None):
     lastMotionSuccess = time.time()
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
-            np.array([0.45,0.0,0]),np.array([np.pi,-np.pi/2,0]))
+            np.array([0.47,-0.03,0]),np.array([np.pi,-np.pi/2,0]))
         simulator.targetPosActual = simulator.targetPosNom + simulator.dX[:3]
         simulator.targetOrientActual = simulator.targetOrientNom + simulator.dX[3:]
         simulator.targetPosEst = simulator.targetPosNom

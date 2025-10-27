@@ -554,7 +554,7 @@ class CalibrationConvergenceSimulator:
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
         translation_weight = 1.0  # Weight for translational errors
-        rotation_weight = 1.0     # Weight for rotational errors
+        rotation_weight = 0.5     # Weight for rotational errors
         
         # Scale translational and rotational differences
         scaled_translation_differences = translation_weight * translationDifferences.flatten()
@@ -570,9 +570,9 @@ class CalibrationConvergenceSimulator:
         errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
         
         # Apply maximum caps to the parameter estimates
-        max_dQ_cap = 0.2
-        max_dL_cap = 5
-        max_dX_cap = 0.4
+        max_dQ_cap = 5.0
+        max_dL_cap = 5.0
+        max_dX_cap = 5.0
         
         # Cap the estimates
         j = self.current_iter
@@ -580,10 +580,12 @@ class CalibrationConvergenceSimulator:
         if j==0:
             #Skip the cap on J6 on the first iteration, since there can be a lot of variability from the end effector
             dLIndex = 11
-        errorEstimates[0:6] = np.clip(errorEstimates[0:6], -max_dQ_cap, max_dQ_cap)    # Joint corrections
-        errorEstimates[6:dLIndex] = np.clip(errorEstimates[6:dLIndex], -max_dL_cap, max_dL_cap)  # Length corrections
-        errorEstimates[12:18] = np.clip(errorEstimates[12:18], -max_dX_cap, max_dX_cap) # Base offset corrections
-        
+
+        updateCoefficient = 0.5
+        errorEstimates[0:6] = np.clip(updateCoefficient*errorEstimates[0:6], -max_dQ_cap, max_dQ_cap)    # Joint corrections
+        errorEstimates[6:dLIndex] = np.clip(updateCoefficient*errorEstimates[6:dLIndex], -max_dL_cap, max_dL_cap)  # Length corrections
+        errorEstimates[12:18] = np.clip(updateCoefficient*errorEstimates[12:18], -max_dX_cap, max_dX_cap) # Base offset corrections
+
         return errorEstimates
     
     def process_iteration_results(self, measurements_actual, measurements_expected,numJacobianTrans,numJacobianRot):
@@ -636,9 +638,9 @@ class CalibrationConvergenceSimulator:
         random_numbers = np.random.rand(3) 
         scale = 0.25
         random_pos = (random_numbers-0.5)*scale
-        xOffset = 0 - scale
+        xOffset = 0 - scale + 0.25
         yOffset = 0
-        zOffset = robot.pos_offsets["z"] -scale*1.2
+        zOffset = robot.pos_offsets["z"] -scale*0.9
         x = xOffset + random_pos[0]
         y = yOffset + random_pos[1]
         z = zOffset + random_pos[2]

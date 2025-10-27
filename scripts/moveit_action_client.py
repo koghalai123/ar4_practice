@@ -159,7 +159,7 @@ class MoveItActionClient(Node):
         request.ik_request.avoid_collisions = avoid_collisions
         
         # THIS CANNOT BE A FLOAT OR IT CAUSES A VARIABLE TYPE ERROR. NO DECIMAL POINTS
-        request.ik_request.timeout.sec = 0
+        request.ik_request.timeout.sec = 2
         request.ik_request.timeout.nanosec = 100000000
 
         
@@ -265,8 +265,8 @@ class MoveItActionClient(Node):
                 constraint = JointConstraint()
                 constraint.joint_name = joint_name
                 constraint.position = position
-                constraint.tolerance_above = 0.003
-                constraint.tolerance_below = 0.003
+                constraint.tolerance_above = 0.006
+                constraint.tolerance_below = 0.006
                 constraint.weight = 1.0
                 joint_constraints.append(constraint)
             
@@ -384,9 +384,9 @@ class MoveItActionClient(Node):
         orientation_constraint.header = target_pose.header
         orientation_constraint.link_name = target_link
         orientation_constraint.orientation = target_pose.pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.02
-        orientation_constraint.absolute_y_axis_tolerance = 0.02
-        orientation_constraint.absolute_z_axis_tolerance = 0.02
+        orientation_constraint.absolute_x_axis_tolerance = 0.005
+        orientation_constraint.absolute_y_axis_tolerance = 0.005
+        orientation_constraint.absolute_z_axis_tolerance = 0.005
         orientation_constraint.weight = 1.0
         
         # Combine constraints

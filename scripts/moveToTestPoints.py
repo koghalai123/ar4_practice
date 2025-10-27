@@ -106,29 +106,41 @@ def main():
 
     position = np.array([0.496455, -0.072606, 0.163363])
     orientation_euler = np.array([0.0, 0.0, 0.0])
-    simulator.moveToPose(position, orientation_euler,calibrate = True)
+    simulator.moveToPose(position, orientation_euler,calibrate =True)
     simulator.moveToPose(position, orientation_euler,calibrate = False)'''
 
-    orientation_euler = np.array([0.0, np.pi/2, 0.0])
+    orientation_euler = np.array([0.0, -np.pi/2, np.pi/2])
     zeroPoint,notNeeded = simulator.robot.to_preferred_frame(simulator.estimatedTargetPoseHistory[-1,:3],orientation_euler)
     zeroPoint = zeroPoint+np.array([-0.01,0.0,0.0])  #move down 10 cm to account for gripper offset
     xOffset = np.array([0.506455 - 0.443850])
     yOffset = xOffset
-    zOffset = 2*xOffset/0.9 +0.025
+    #Additional offset added here to account for the difference in end effector size between the camera and test block for validation
+    zOffset = 2*xOffset/0.9 +0.043
 
+    middle = np.hstack((0, 0, zOffset))
     backRight = np.hstack((-xOffset, -yOffset, zOffset))
     backLeft = np.hstack((-xOffset, yOffset, zOffset))
-    frontLeft = np.hstack((xOffset, -yOffset, zOffset))
-    frontRight = np.hstack((xOffset, yOffset, zOffset))
+    frontRight = np.hstack((xOffset, -yOffset, zOffset))
+    frontLeft = np.hstack((xOffset, yOffset, zOffset))
+
+    '''simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = True)
+    simulator.robot.move_to_home()
+    simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = True)
+    simulator.moveToPose( zeroPoint+backLeft, orientation_euler,calibrate = True)'''
+
+
+
+    '''simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = True)
+    simulator.robot.move_to_home()
+    simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = True)
+    simulator.moveToPose( zeroPoint+backRight, orientation_euler,calibrate = True)'''
 
     '''simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+backLeft, orientation_euler,calibrate = True)'''
-    simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+backRight, orientation_euler,calibrate = True)
-    '''simulator.robot.move_to_home()
     simulator.moveToPose( zeroPoint+frontLeft, orientation_euler,calibrate = True)'''
-    '''simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+frontRight, orientation_euler,calibrate = True)'''
+
+    simulator.robot.move_to_home()
+    simulator.moveToPose( zeroPoint+frontRight, orientation_euler,calibrate = True)
+    #simulator.robot.move_to_home()
     #simulator.moveToPose(position, orientation_euler,calibrate = False)
 
     #simulator.robot.move_to_home()
