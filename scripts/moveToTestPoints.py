@@ -123,23 +123,23 @@ def main():
     frontRight = np.hstack((xOffset, -yOffset, zOffset))
     frontLeft = np.hstack((xOffset, yOffset, zOffset))
 
-    simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = True)
+    '''simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = False)
     simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = True)
-    simulator.moveToPose( zeroPoint+backLeft, orientation_euler,calibrate = True)
+    simulator.moveToPose( zeroPoint+backLeft*1.2, orientation_euler,calibrate = False)
+    simulator.moveToPose( zeroPoint+backLeft, orientation_euler,calibrate = False)'''
 
 
 
-    '''simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = True)
+    '''simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = False)
     simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = True)
-    simulator.moveToPose( zeroPoint+backRight, orientation_euler,calibrate = True)'''
+    simulator.moveToPose( zeroPoint+backRight*1.2, orientation_euler,calibrate = False)
+    simulator.moveToPose( zeroPoint+backRight, orientation_euler,calibrate = False)'''
 
     '''simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+frontLeft, orientation_euler,calibrate = True)'''
+    simulator.moveToPose( zeroPoint+frontLeft, orientation_euler,calibrate = False)'''
 
-    '''simulator.robot.move_to_home()
-    simulator.moveToPose( zeroPoint+frontRight, orientation_euler,calibrate = True)'''
+    simulator.robot.move_to_home()
+    simulator.moveToPose( zeroPoint+frontRight, orientation_euler,calibrate = False)
 
     #simulator.robot.move_to_home()
     #simulator.moveToPose(position, orientation_euler,calibrate = False)
