@@ -19,64 +19,45 @@ csv_filenames = [
 ]
 
 # Load dial indicator validation data
-def load_dial_indicator_data(filename='dialIndicatorFinalData.txt'):
+def load_dial_indicator_data(filename):
     """Load and process dial indicator validation data"""
     try:
-        # Read the dial indicator data
         dial_data = {'backRight': [], 'backLeft': [], 'frontLeft': [], 'frontRight': []}
         current_position = None
-        
         with open(filename, 'r') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('//') and ',' in line:
-                    # Split by comma and take values
                     parts = line.split(',')
                     if len(parts) >= 3:
                         try:
-                            x, y, z = float(parts[0]) / 1000.0, float(parts[1]) / 1000.0, float(parts[2]) / 1000.0  # Convert mm to m
-                            
-                            # Check if there's a position label
+                            x, y, z = float(parts[0]) / 1000.0, float(parts[1]) / 1000.0, float(parts[2]) / 1000.0
                             if len(parts) > 3 and parts[3].strip():
                                 current_position = parts[3].strip()
-                            
-                            # Add to appropriate position group
                             if current_position and current_position in dial_data:
                                 dial_data[current_position].append([x, y, z])
                         except ValueError:
                             continue
-        
-        # Calculate errors for each position
         position_errors = {}
         all_errors = []
-        
         for pos, data in dial_data.items():
             if data:
                 data_array = np.array(data)
                 errors = np.sqrt(np.sum(data_array**2, axis=1))
                 position_errors[pos] = np.mean(errors)
                 all_errors.extend(errors)
-                print(f"Dial indicator validation - {pos} Avg Position Error: {position_errors[pos]:.6f} m")
-        
         if all_errors:
             overall_avg_position_error = np.mean(all_errors)
-            # For orientation error, we'll use a simple approximation
-            avg_orientation_error = np.std(all_errors) * 0.1  # Rough approximation
-            
-            print(f"Dial indicator validation - Overall Avg Position Error: {overall_avg_position_error:.6f} m")
-            print(f"Dial indicator validation - Est Orientation Error: {avg_orientation_error:.6f} rad")
-            
+            avg_orientation_error = np.std(all_errors) * 0.1
             return overall_avg_position_error, avg_orientation_error, position_errors
         else:
-            print("Warning: No valid dial indicator data found")
             return None, None, {}
-            
     except FileNotFoundError:
-        print(f"Warning: {filename} not found for validation data")
         return None, None, {}
 
-# Load validation data
-validation_pos_error, validation_orient_error, position_specific_errors = load_dial_indicator_data()
+# Load initial and final dial indicator data
+initial_pos_error, initial_orient_error, initial_position_errors = load_dial_indicator_data('dialIndicatorInitialData.txt')
+final_pos_error, final_orient_error, final_position_errors = load_dial_indicator_data('dialIndicatorFinalData.txt')
 
 # Load all CSV files
 dataframes = {}
@@ -98,15 +79,18 @@ base_name = "combined_calibration"
 colors = plt.cm.tab10(np.linspace(0, 1, len(dataframes)))
 file_colors = {filename: colors[i] for i, filename in enumerate(dataframes.keys())}
 
+# --- For all plots, increase legend font size ---
+# Example for one plot, apply to all:
+# plt.legend(fontsize=14)  # Change from default to larger font
+
 # Plot position error values (logarithmic y-axis)
 plt.figure()
 min_vals = []
-
 counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color)
+    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color, linewidth=2)
     
     # Collect min values for y-axis scaling
     pos_errors = df['Position Error']
@@ -123,15 +107,17 @@ if validation_pos_error is not None:
 # Add position-specific validation lines
 position_colors = {'backRight': 'orange', 'backLeft': 'purple', 'frontLeft': 'green', 'frontRight': 'brown'}
 for pos, error in position_specific_errors.items():
-    plt.axhline(y=error, color=position_colors.get(pos, 'gray'), linestyle=':', linewidth=1.5,
+    plt.axhline(y=error, color=position_colors.get(pos, 'gray'), linestyle=':', linewidth=2,
                 label=f'Dial {pos}: {error:.6f}m')'''
 
 plt.yscale('log')
-plt.title('Position Error Values')
-plt.xlabel('Iteration')
-plt.ylabel('Position Error [meters]')
-plt.legend()
+plt.title('Position Error Values', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Position Error [meters]', fontsize=16)
+plt.legend(fontsize=14)
 plt.grid(True, which='both', axis='y')
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 
 # Set y-axis limits based on minimum values from all datasets
 if min_vals:
@@ -150,41 +136,31 @@ plt.savefig(f"{base_name}_position_error_log.png", dpi=300)
 
 # Plot position error values (linear y-axis)
 plt.figure()
-
 counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color)
+    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color, linewidth=2)
     counter += 1
 
-'''# Add validation lines if available
-if validation_pos_error is not None:
-    plt.axhline(y=validation_pos_error, color='red', linestyle='--', linewidth=2, 
-                label=f'Dial Indicator Overall: {validation_pos_error:.6f}m')
-
-# Add position-specific validation lines
-for pos, error in position_specific_errors.items():
-    plt.axhline(y=error, color=position_colors.get(pos, 'gray'), linestyle=':', linewidth=1.5,
-                label=f'Dial {pos}: {error:.6f}m')'''
-
-plt.title('Position Error Values')
-plt.xlabel('Iteration')
-plt.ylabel('Position Error [meters]')
-plt.legend()
-plt.grid(True)
+plt.title('Position Error Values', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Position Error [meters]', fontsize=16)
+plt.legend(fontsize=14)
+plt.grid(False)
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 plt.tight_layout()
 plt.savefig(f"{base_name}_position_error_linear.png", dpi=300)
 
 # Plot orientation error values (logarithmic y-axis)
 plt.figure()
 min_vals = []
-
 counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color)
+    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color, linewidth=2)
     
     # Collect min values for y-axis scaling
     orient_errors = df['Orientation Error']
@@ -199,11 +175,13 @@ if validation_orient_error is not None:
                 label=f'Estimated Validation: {validation_orient_error:.6f}rad')'''
 
 plt.yscale('log')
-plt.title('Orientation Error Values')
-plt.xlabel('Iteration')
-plt.ylabel('Orientation Error [radians]')
-plt.legend()
+plt.title('Orientation Error Values', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Orientation Error [radians]', fontsize=16)
+plt.legend(fontsize=14)
 plt.grid(True, which='both', axis='y')
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 
 # Set y-axis limits based on minimum values from all datasets
 if min_vals:
@@ -222,24 +200,20 @@ plt.savefig(f"{base_name}_orientation_error_log.png", dpi=300)
 
 # Plot orientation error values (linear y-axis)
 plt.figure()
-
 counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color)
+    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color, linewidth=2)
     counter += 1
 
-'''# Add validation line if available
-if validation_orient_error is not None:
-    plt.axhline(y=validation_orient_error, color='red', linestyle='--', linewidth=2, 
-                label=f'Estimated Validation: {validation_orient_error:.6f}rad')'''
-
-plt.title('Orientation Error Values')
-plt.xlabel('Iteration')
-plt.ylabel('Orientation Error [radians]')
-plt.legend()
-plt.grid(True)
+plt.title('Orientation Error Values', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Orientation Error [radians]', fontsize=16)
+plt.legend(fontsize=14)
+plt.grid(False)
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 plt.tight_layout()
 plt.savefig(f"{base_name}_orientation_error_linear.png", dpi=300)
 
@@ -253,13 +227,15 @@ for filename, df in dataframes.items():
     for col in pose_cols:
         if col in df.columns:
             diff = df[col] - df[col].iloc[-1]
-            plt.plot(diff, label=f'{label_base} - {col}')
+            plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
-plt.title('Estimated Target Pose (Difference from Final Value) - Combined')
-plt.xlabel('Iteration')
-plt.ylabel('Value - Final Value [meters/radians]')
-plt.legend()
-plt.grid(True)
+plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Value - Final Value [meters/radians]', fontsize=16)
+plt.legend(fontsize=14)
+plt.grid(False)
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 plt.tight_layout()
 plt.savefig(f"{base_name}_est_target_pose.png", dpi=300)
 
@@ -270,16 +246,17 @@ for filename, df in dataframes.items():
     calib_cols = [col for col in df.columns if 'Estimated' in col and col not in pose_cols]
     for col in calib_cols:
         diff = df[col] - df[col].iloc[-1]
-        plt.plot(diff, label=f'{label_base} - {col}')
+        plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
-plt.title('Calibration Parameters (Difference from Final Value) - Combined')
-plt.xlabel('Iteration')
-plt.ylabel('Value - Final Value')
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.grid(True)
+plt.title('Calibration Parameters (Difference from Final Value) - Combined', fontsize=16)
+plt.xlabel('Iteration', fontsize=16)
+plt.ylabel('Value - Final Value', fontsize=16)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=16)
+plt.grid(False)
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
 plt.tight_layout()
 plt.savefig(f"{base_name}_calib_params.png", dpi=300)
-
 
 plt.figure(figsize=(10, 6))
 
@@ -293,13 +270,11 @@ for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
         initial_errors.append(df['Position Error'].iloc[0])
 
+print("Camera Initial Errors:", np.mean(initial_errors))  # Print initial errors
+
 if initial_errors:
     box_data.append(initial_errors)
-    box_labels.append('Initial Position\nErrors')
-    # Print statistics
-    print(f"\nInitial Position Errors Statistics:")
-    print(f"  Mean: {np.mean(initial_errors):.6f} m")
-    print(f"  Std:  {np.std(initial_errors):.6f} m")
+    box_labels.append('Camera Initial\nError')
 
 # 2. Final position errors from calibration files  
 final_errors = []
@@ -307,52 +282,59 @@ for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
         final_errors.append(df['Position Error'].iloc[-1])
 
+print("Camera Final Errors:", np.mean(final_errors))  # Print final errors
+
 if final_errors:
     box_data.append(final_errors)
-    box_labels.append('Final Position\nErrors')
-    # Print statistics
-    print(f"\nFinal Position Errors Statistics:")
-    print(f"  Mean: {np.mean(final_errors):.6f} m")
-    print(f"  Std:  {np.std(final_errors):.6f} m")
+    box_labels.append('Camera Final\nError')
 
-# 3. Dial indicator validation data
-if validation_pos_error is not None:
-    # Use the individual position errors from each corner
-    dial_errors = list(position_specific_errors.values())
-    if dial_errors:
-        box_data.append(dial_errors)
-        box_labels.append('Dial Indicator\nValidation')
-        # Print statistics
-        print(f"\nDial Indicator Validation Statistics:")
-        print(f"  Mean: {np.mean(dial_errors):.6f} m")
-        print(f"  Std:  {np.std(dial_errors):.6f} m")
+# 3. Initial dial indicator data
+if initial_pos_error is not None:
+    dial_initial_errors = list(initial_position_errors.values())
+    print("Dial Indicator Initial Errors:", np.mean(dial_initial_errors))  # Print dial initial errors
+    if dial_initial_errors:
+        box_data.append(dial_initial_errors)
+        box_labels.append('Dial Indicator\nInitial Error')
+
+# 4. Final dial indicator data
+if final_pos_error is not None:
+    dial_final_errors = list(final_position_errors.values())
+    print("Dial Indicator Final Errors:", np.mean(dial_final_errors))  # Print dial final errors
+    if dial_final_errors:
+        box_data.append(dial_final_errors)
+        box_labels.append('Dial Indicator\nFinal Error')
 
 # Create the box plot
-if len(box_data) == 3:
-    plt.boxplot(box_data, labels=box_labels)
-    plt.yscale('log')
-    plt.title('Position Error Comparison')
-    plt.ylabel('Position Error [meters]')
-    plt.grid(True, which='both', axis='y', alpha=0.3)
-    
-    # Add more detailed y-axis labels
-    ax = plt.gca()
-    ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
-    ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 3, 4, 5, 6, 7, 8, 9], numticks=100))
-    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1e'))
-    ax.yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))  # Changed from '' to '%.0e'
-    ax.tick_params(axis='y', which='major', labelsize=10)
-    ax.tick_params(axis='y', which='minor', length=4, labelsize=8)  # Added labelsize for minor ticks
-    
-    plt.tight_layout()
-    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300)
+if len(box_data) >= 4:
+    fig, ax = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
+    box = ax.boxplot(
+        box_data,
+        labels=box_labels,
+        widths=0.7,
+        boxprops=dict(linewidth=1.5),
+        whiskerprops=dict(linewidth=1.5),
+        capprops=dict(linewidth=1.5),
+        medianprops=dict(linewidth=1.5),
+        patch_artist=True
+    )
+    # Shade the boxes
+    colors = ["#6EB5F8"]  # Example pastel colors
+    for patch in box['boxes']:
+        patch.set_facecolor(colors[0])
+        patch.set_alpha(0.8)
 
-# Print improvement statistics if we have both initial and final data
-if initial_errors and final_errors:
-    improvement_factor = np.mean(initial_errors) / np.mean(final_errors)
-    print(f"\nCalibration Improvement:")
-    print(f"  Mean error reduction factor: {improvement_factor:.2f}x")
-    print(f"  Mean error reduction: {(1 - 1/improvement_factor)*100:.1f}%")
+    ax.set_yscale('log')
+    ax.set_title('Position Error Comparison', fontsize=22)
+    ax.set_ylabel('Position Error [meters]', fontsize=18)
+    ax.grid(True, which='both', axis='y', alpha=0.3)
+    ax.set_xticklabels(box_labels, fontsize=14, rotation=10)
+    ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
+    ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 4, 6, 8], numticks=100))
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1e'))
+    ax.yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))
+    ax.tick_params(axis='y', which='major', labelsize=14)
+    ax.tick_params(axis='y', which='minor', length=4, labelsize=14)
+    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300)
 
 plt.show()
 
