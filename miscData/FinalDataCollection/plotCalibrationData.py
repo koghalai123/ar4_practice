@@ -90,30 +90,19 @@ counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color, linewidth=2)
+    plt.plot(df['Position Error'] * 1000, label=f'Trial {counter}', color=color, linewidth=2)
     
     # Collect min values for y-axis scaling
-    pos_errors = df['Position Error']
+    pos_errors = df['Position Error'] * 1000
     min_val = pos_errors[pos_errors > 0].min()
     if min_val is not None and min_val > 0:
         min_vals.append(min_val)
     counter += 1
 
-'''# Add validation lines if available
-if validation_pos_error is not None:
-    plt.axhline(y=validation_pos_error, color='red', linestyle='--', linewidth=2, 
-                label=f'Dial Indicator Overall: {validation_pos_error:.6f}m')
-
-# Add position-specific validation lines
-position_colors = {'backRight': 'orange', 'backLeft': 'purple', 'frontLeft': 'green', 'frontRight': 'brown'}
-for pos, error in position_specific_errors.items():
-    plt.axhline(y=error, color=position_colors.get(pos, 'gray'), linestyle=':', linewidth=2,
-                label=f'Dial {pos}: {error:.6f}m')'''
-
 plt.yscale('log')
 plt.title('Position Error Values', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [meters]', fontsize=16)
+plt.ylabel('Position Error [mm]', fontsize=16)
 plt.legend(fontsize=14)
 plt.grid(True, which='both', axis='y')
 plt.xticks(fontsize=16)
@@ -140,12 +129,12 @@ counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Position Error'], label=f'Trial {counter}', color=color, linewidth=2)
+    plt.plot(df['Position Error'] * 1000, label=f'Trial {counter}', color=color, linewidth=2)
     counter += 1
 
 plt.title('Position Error Values', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [meters]', fontsize=16)
+plt.ylabel('Position Error [mm]', fontsize=16)
 plt.legend(fontsize=14)
 plt.grid(False)
 plt.xticks(fontsize=16)
@@ -160,10 +149,10 @@ counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color, linewidth=2)
+    plt.plot(df['Orientation Error'] * 180/np.pi, label=f'Trial {counter}', color=color, linewidth=2)
     
     # Collect min values for y-axis scaling
-    orient_errors = df['Orientation Error']
+    orient_errors = df['Orientation Error'] * 180/np.pi
     min_val = orient_errors[orient_errors > 0].min()
     if min_val is not None and min_val > 0:
         min_vals.append(min_val)
@@ -171,13 +160,13 @@ for filename, df in dataframes.items():
 
 '''# Add validation line if available
 if validation_orient_error is not None:
-    plt.axhline(y=validation_orient_error, color='red', linestyle='--', linewidth=2, 
-                label=f'Estimated Validation: {validation_orient_error:.6f}rad')'''
+    plt.axhline(y=validation_orient_error * 180/np.pi, color='red', linestyle='--', linewidth=2, 
+                label=f'Estimated Validation: {validation_orient_error * 180/np.pi:.6f}deg')'''
 
 plt.yscale('log')
 plt.title('Orientation Error Values', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [radians]', fontsize=16)
+plt.ylabel('Orientation Error [degrees]', fontsize=16)
 plt.legend(fontsize=14)
 plt.grid(True, which='both', axis='y')
 plt.xticks(fontsize=16)
@@ -204,12 +193,12 @@ counter = 1
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     color = file_colors[filename]
-    plt.plot(df['Orientation Error'], label=f'Trial {counter}', color=color, linewidth=2)
+    plt.plot(df['Orientation Error'] * 180/np.pi, label=f'Trial {counter}', color=color, linewidth=2)
     counter += 1
 
 plt.title('Orientation Error Values', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [radians]', fontsize=16)
+plt.ylabel('Orientation Error [degrees]', fontsize=16)
 plt.legend(fontsize=14)
 plt.grid(False)
 plt.xticks(fontsize=16)
@@ -227,11 +216,14 @@ for filename, df in dataframes.items():
     for col in pose_cols:
         if col in df.columns:
             diff = df[col] - df[col].iloc[-1]
+            # Convert angular values to degrees
+            if 'Roll' in col or 'Pitch' in col or 'Yaw' in col:
+                diff = diff * 180/np.pi
             plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
 plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Value - Final Value [meters/radians]', fontsize=16)
+plt.ylabel('Value - Final Value [mm/degrees]', fontsize=16)
 plt.legend(fontsize=14)
 plt.grid(False)
 plt.xticks(fontsize=16)
@@ -268,7 +260,7 @@ box_labels = []
 initial_errors = []
 for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
-        initial_errors.append(df['Position Error'].iloc[0])
+        initial_errors.append(df['Position Error'].iloc[0] * 1000)
 
 print("Camera Initial Errors:", np.mean(initial_errors))  # Print initial errors
 
@@ -280,7 +272,7 @@ if initial_errors:
 final_errors = []
 for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
-        final_errors.append(df['Position Error'].iloc[-1])
+        final_errors.append(df['Position Error'].iloc[-1] * 1000)
 
 print("Camera Final Errors:", np.mean(final_errors))  # Print final errors
 
@@ -290,7 +282,7 @@ if final_errors:
 
 # 3. Initial dial indicator data
 if initial_pos_error is not None:
-    dial_initial_errors = list(initial_position_errors.values())
+    dial_initial_errors = [error * 1000 for error in initial_position_errors.values()]
     print("Dial Indicator Initial Errors:", np.mean(dial_initial_errors))  # Print dial initial errors
     if dial_initial_errors:
         box_data.append(dial_initial_errors)
@@ -298,7 +290,7 @@ if initial_pos_error is not None:
 
 # 4. Final dial indicator data
 if final_pos_error is not None:
-    dial_final_errors = list(final_position_errors.values())
+    dial_final_errors = [error * 1000 for error in final_position_errors.values()]
     print("Dial Indicator Final Errors:", np.mean(dial_final_errors))  # Print dial final errors
     if dial_final_errors:
         box_data.append(dial_final_errors)
@@ -325,7 +317,7 @@ if len(box_data) >= 4:
 
     ax.set_yscale('log')
     ax.set_title('Position Error Comparison', fontsize=22)
-    ax.set_ylabel('Position Error [meters]', fontsize=18)
+    ax.set_ylabel('Position Error [mm]', fontsize=18)
     ax.grid(True, which='both', axis='y', alpha=0.3)
     ax.set_xticklabels(box_labels, fontsize=14, rotation=10)
     ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
