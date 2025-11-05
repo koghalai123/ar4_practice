@@ -49,7 +49,7 @@ def create_scatter_plot(tape_distances, normalized_data):
     colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
     markers = ['o', 's', '^']
     
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(9, 7))
     
     # Collect all data points for overall trendline
     all_tape_distances = []
@@ -96,9 +96,9 @@ def create_scatter_plot(tape_distances, normalized_data):
             label=f'Overall Trendline (y={slope:.3f}x+{intercept:.2f})\nR²={r_value**2:.3f}')
     
     # Formatting
-    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=18)
-    ax.set_ylabel('Camera Distance [mm]', fontsize=18)
-    ax.set_title('Camera Distance vs Tape Measure Distance\n(Normalized to 20mm)', fontsize=18)
+    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=20)
+    ax.set_ylabel('Camera Distance [mm]', fontsize=20)
+    ax.set_title('Camera Distance vs Tape Measure Distance\n(Normalized to 20mm)', fontsize=20)
     ax.grid(True, alpha=0.3)
     
     # Set axis limits with some padding
@@ -112,7 +112,7 @@ def create_scatter_plot(tape_distances, normalized_data):
     # Increase font size for tick labels
     ax.tick_params(axis='both', which='major', labelsize=16)
     
-    ax.legend(loc='lower right', fontsize=18)
+    ax.legend(loc='lower right', fontsize=14)
     
     # Add statistics text box (using original positions for residuals)
     residuals = np.array(all_camera_distances) - np.array(all_tape_distances)
@@ -124,7 +124,7 @@ def create_scatter_plot(tape_distances, normalized_data):
     stats_text += f'Mean Residual: {np.mean(residuals):.2f} mm\n'
     stats_text += f'Std Residual: {np.std(residuals):.2f} mm'
     
-    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=18,
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=14,
             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
@@ -135,7 +135,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
     conditions = ['0°', '30°', '60°']
     colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
     
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots(figsize=(9, 7))
     
     # Calculate residuals for each condition and distance
     for i, (condition_data, condition_name, color) in enumerate(zip(normalized_data, conditions, colors)):
@@ -164,9 +164,9 @@ def create_residual_boxplot(tape_distances, normalized_data):
     ax.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.5, label='Zero residual')
     
     # Formatting
-    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=18)
-    ax.set_ylabel('Residual (Camera - Tape) [mm]', fontsize=18)
-    ax.set_title('Measurement Residuals vs Distance', fontsize=18)
+    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=20)
+    ax.set_ylabel('Residual (Camera - Tape) [mm]', fontsize=20)
+    ax.set_title('Measurement Residuals vs Distance', fontsize=20)
     ax.grid(True, alpha=0.3)
     
     # Set x-axis ticks to tape distances
@@ -182,7 +182,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
         legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.7, label=condition))
     legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', label='Zero residual'))
     
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=18)
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=14)
     
     # Calculate and display overall statistics
     all_residuals = []
@@ -210,7 +210,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
         stats_text += stat + '\n'
     stats_text += f'Overall: μ={overall_mean:.2f}, σ={overall_std:.2f} mm'
     
-    ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=18,
+    ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=14,
             verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()

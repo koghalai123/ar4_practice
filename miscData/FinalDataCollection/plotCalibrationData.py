@@ -75,8 +75,17 @@ if not dataframes:
 # Prepare output image filename base
 base_name = "combined_calibration"
 
-# Get consistent colors for each file
-colors = plt.cm.tab10(np.linspace(0, 1, len(dataframes)))
+# Get consistent colors for each file using a colorblind-friendly palette
+# Using Paul Tol's vibrant color scheme, which is designed for colorblindness and print
+cb_palette = [
+    '#EE7733', '#0077BB', '#33BBEE', '#EE3377', 
+    '#CC3311', '#009988', '#AA4499', '#DDCC77'
+]
+if len(dataframes) > len(cb_palette):
+    # Fallback to a standard colormap if more colors are needed
+    colors = plt.cm.viridis(np.linspace(0, 1, len(dataframes)))
+else:
+    colors = cb_palette[:len(dataframes)]
 file_colors = {filename: colors[i] for i, filename in enumerate(dataframes.keys())}
 
 # --- For all plots, increase legend font size ---
@@ -309,10 +318,11 @@ if len(box_data) >= 4:
         medianprops=dict(linewidth=1.5),
         patch_artist=True
     )
-    # Shade the boxes
-    colors = ["#6EB5F8"]  # Example pastel colors
-    for patch in box['boxes']:
-        patch.set_facecolor(colors[0])
+    # Shade the boxes with colorblind-friendly colors
+    # Using a subset of the 'Paired' colormap
+    box_colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c']
+    for patch, color in zip(box['boxes'], box_colors):
+        patch.set_facecolor(color)
         patch.set_alpha(0.8)
 
     ax.set_yscale('log')
