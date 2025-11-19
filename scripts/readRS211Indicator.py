@@ -4,6 +4,7 @@ import serial
 import serial.tools.list_ports
 import time
 import sys
+import csv
 from datetime import datetime
 
 def find_prolific_device():
@@ -28,6 +29,9 @@ def find_prolific_device():
 def main():
     """Simple USB serial reader for Prolific PL2303 device"""
     
+    # Create CSV filename with timestamp
+    csv_filename = f"dial_indicator_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
     # Find the specific Prolific device
     port = find_prolific_device()
     
@@ -44,40 +48,54 @@ def main():
     try:
         ser = serial.Serial(port, 9600, timeout=1)
         print(f"Connected to Prolific PL2303 on {port} at 9600 baud")
+        print(f"Saving data to: {csv_filename}")
         print("Reading numeric data... (Press Ctrl+C to stop)")
         print("-" * 50)
         
-        buffer = b""  # Buffer to accumulate data
-        
-        while True:
-            if ser.in_waiting > 0:
-                data = ser.read(ser.in_waiting)
-                buffer += data
-                
-                # Process complete readings (ending with \r)
-                while b'\r' in buffer:
-                    line, buffer = buffer.split(b'\r', 1)
-                    
-                    # Skip the first null byte if present
-                    if line.startswith(b'\x00'):
-                        line = line[1:]
-                    
-                    if line:
-                        try:
-                            # Decode and convert to float
-                            reading_str = line.decode('ascii', errors='ignore').strip()
-                            if reading_str:
-                                reading_value = float(reading_str)
-                                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                                print(f"[{timestamp}] {reading_value:+8.3f}")
-                        except ValueError:
-                            # Skip invalid readings
-                            pass
+        # Open CSV file for writing
+        with open(csv_filename, 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(['Timestamp', 'Reading'])  # Write header
             
-            time.sleep(0.01)
+            buffer = b""  # Buffer to accumulate data
+            
+            while True:
+                if ser.in_waiting > 0:
+                    data = ser.read(ser.in_waiting)
+                    buffer += data
+                    
+                    # Process complete readings (ending with \r)
+                    while b'\r' in buffer:
+                        line, buffer = buffer.split(b'\r', 1)
+                        
+                        # Skip the first null byte if present
+                        if line.startswith(b'\x00'):
+                            line = line[1:]
+                        
+                        if line:
+                            try:
+                                # Decode and convert to float
+                                reading_str = line.decode('ascii', errors='ignore').strip()
+                                if reading_str:
+                                    reading_value = float(reading_str)
+                                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                                    display_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                                    
+                                    # Write to CSV
+                                    csv_writer.writerow([timestamp, reading_value])
+                                    csvfile.flush()  # Ensure data is written immediately
+                                    
+                                    # Display to console
+                                    print(f"[{display_time}] {reading_value:+8.3f}")
+                            except ValueError:
+                                # Skip invalid readings
+                                pass
+                
+                time.sleep(0.01)
             
     except KeyboardInterrupt:
         print("\nStopping...")
+        print(f"Data saved to: {csv_filename}")
     except PermissionError:
         print(f"Permission denied accessing {port}")
         print("Try: sudo usermod -a -G dialout $USER")

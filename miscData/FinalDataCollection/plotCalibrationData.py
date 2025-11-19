@@ -75,18 +75,16 @@ if not dataframes:
 # Prepare output image filename base
 base_name = "combined_calibration"
 
-# Get consistent colors for each file using a colorblind-friendly palette
-# Using Paul Tol's vibrant color scheme, which is designed for colorblindness and print
-cb_palette = [
-    '#EE7733', '#0077BB', '#33BBEE', '#EE3377', 
-    '#CC3311', '#009988', '#AA4499', '#DDCC77'
-]
-if len(dataframes) > len(cb_palette):
-    # Fallback to a standard colormap if more colors are needed
-    colors = plt.cm.viridis(np.linspace(0, 1, len(dataframes)))
+# Get consistent colors for each file using a light blue to dark blue gradient
+# Create a blue gradient from light to dark
+n_files = len(dataframes)
+if n_files > 1:
+    # Create a gradient from light blue to dark blue
+    blues = plt.cm.Blues(np.linspace(0.25, 1.0, n_files))  # Start at 0.3 to avoid very light colors
 else:
-    colors = cb_palette[:len(dataframes)]
-file_colors = {filename: colors[i] for i, filename in enumerate(dataframes.keys())}
+    blues = ['#0077BB']  # Single dark blue if only one file
+
+file_colors = {filename: blues[i] for i, filename in enumerate(dataframes.keys())}
 
 # --- For all plots, increase legend font size ---
 # Example for one plot, apply to all:
