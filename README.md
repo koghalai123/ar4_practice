@@ -83,8 +83,15 @@ ros2 launch annin_ar4_gazebo gazebo.launch.py
 ros2 launch annin_ar4_moveit_config moveit.launch.py use_sim_time:=true include_gripper:=True
 
 ros2 run ar4_practice joint_commander.py
+
 ```
-# To plot the workplace envelope in gazebo(each in its own terminal window): 
+
+# Reasonable tutorial for learning how to program with ROS 2:
+https://aleksandarhaber.com/ros2-jazzy-tutorial-position-control-of-mobile-robot-in-python-and-ros2/
+
+
+
+# To plot the workplace envelope in gazebo(each in its own terminal window). Must have some data files stored in the correct locations: 
 ```
 ros2 launch annin_ar4_gazebo gazebo.launch.py
 
@@ -97,7 +104,7 @@ Run "surfacePublisher.py" either through ROS2 or simply through python and add t
 ```
 pip install shapely trimesh open3d alphashape descartes numpy-stl "pyglet<2" --break-system-packages
 ```
-# To start Realsense node: 
+# To start Realsense node(must have camera attached to robot): 
 ```
 ros2 run realsense2_camera realsense2_camera_node
 ```
