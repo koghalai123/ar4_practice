@@ -14,7 +14,7 @@ mkdir -p ~/ar4_ws/src
 
 cd ~/ar4_ws/src
 
-git clone https://github.com/ycheng517/ar4_ros_driver
+git clone https://github.com/koghalai123/ar4_ros_driver
 
 git clone https://github.com/ycheng517/ar4_hand_eye_calibration
 
@@ -61,7 +61,11 @@ sudo apt install python3-pip
 sudo apt install ros-jazzy-tf-transformations
 
 pip install pandas --break-system-packages
+
 ```
+# To install the driver for the robot arm, follow the instructions here: https://github.com/koghalai123/ar4_ros_driver
+This is a fork of an existing repo that has some fixes that I think make it more pleasant to work with.
+
 # To give actual commands to the physical robot(each in its own terminal window): 
 ```
 ros2 launch annin_ar4_driver driver.launch.py calibrate:=True include_gripper:=True
