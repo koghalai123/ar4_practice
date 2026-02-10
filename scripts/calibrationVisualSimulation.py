@@ -31,7 +31,7 @@ def main(args=None):
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=7, numIters=4, 
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=6, 
                                                dQMagnitude=0.1, dLMagnitude=0.01, 
                                                dXMagnitude=0.05, camera_mode=True, noiseMagnitude=0.00, robot = robot)
     if simulator.camera_mode:

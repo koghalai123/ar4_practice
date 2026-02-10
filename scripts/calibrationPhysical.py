@@ -138,7 +138,7 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=10, numIters=6, 
+    simulator = CalibrationConvergenceSimulator(n=12, numIters=4, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot
@@ -263,7 +263,7 @@ def main(args=None):
                 simulator.numJacobianTrans,
                 simulator.numJacobianRot)
         # Save results to CSV
-        simulator.save_to_csv(filename='physical_calibration_data.csv')
+        simulator.save_to_csv(filename='P12Q4Trial4.csv')
         simulator.robot = None
 
         simulator_copy = copy.deepcopy(simulator)

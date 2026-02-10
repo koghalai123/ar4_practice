@@ -66,6 +66,7 @@ class CalibrationConvergenceSimulator:
         self.dLMat = np.zeros((self.numIters, 6))
         self.dXMat = np.zeros((self.numIters, 6))
         self.avgAccMat = np.ones((self.numIters,2))
+        self.stdAccMat = np.ones((self.numIters,2))
         
         self.symbolic_matrices = self.loadSymbolicTransforms()
         self.baseToWrist = sp.eye(4)
@@ -548,8 +549,11 @@ class CalibrationConvergenceSimulator:
         avgRotationalError = np.mean(rotationalError)
         avgAccuracyError = np.mean(accuracyError)
         avgTransAndRotError = np.array([avgAccuracyError, avgRotationalError])
-        
-        return avgAccuracyError, avgRotationalError, avgTransAndRotError
+        stdAccuracyError = np.std(accuracyError)
+        stdRotationalError = np.std(rotationalError)
+        stdTransAndRotError = np.array([stdAccuracyError, stdRotationalError])
+
+        return avgAccuracyError, avgRotationalError, avgTransAndRotError, stdTransAndRotError
         
     def compute_calibration_parameters(self, translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot):
         """Compute calibration parameters using least squares"""
@@ -594,10 +598,10 @@ class CalibrationConvergenceSimulator:
 
         translationDifferences, rotationalDifferences = self.compute_differences(measurements_expected, measurements_actual)
         
-        avgAccuracyError, avgRotationalError, avgTransAndRotError = self.compute_error_metrics(
+        avgAccuracyError, avgRotationalError, avgTransAndRotError, stdTransAndRotError = self.compute_error_metrics(
             translationDifferences, rotationalDifferences)
         self.avgAccMat[j,:] = avgTransAndRotError
-        
+        self.stdAccMat[j,:] = stdTransAndRotError
         errorEstimates = self.compute_calibration_parameters(
             translationDifferences, rotationalDifferences, numJacobianTrans, numJacobianRot)
         
@@ -687,19 +691,15 @@ class CalibrationConvergenceSimulator:
         j = self.current_iter
         combined = np.hstack((
             self.measuredErrorsHistory[:j+1, :],
+            self.stdAccMat[:j+1, :],
             self.estimatedTargetPoseHistory[:j+1, :],
             self.calibrationParameterHistory[:j+1, :]
         ))
 
         # Create column names
-        '''columns = (
-            [f"avgError_{i}" for i in range(self.measuredErrorsHistory.shape[1])] +
-            [f"estTargetPose_{i}" for i in range(self.estimatedTargetPoseHistory.shape[1])] +
-            [f"calibParam_{i}" for i in range(self.calibrationParameterHistory.shape[1])]
-        )'''
-        
         columns = (
             ["Position Error", "Orientation Error"] +
+            ["Position Error Std", "Orientation Error Std"] +
             ["Estimated Target X", "Estimated Target Y", "Estimated Target Z", "Estimated Target Roll", "Estimated Target Pitch", "Estimated Target Yaw"] +
             ["dQ Estimated_1", "dQ Estimated_2", "dQ Estimated_3", "dQ Estimated_4", "dQ Estimated_5", "dQ Estimated_6"] +
             ["dL Estimated_1", "dL Estimated_2", "dL Estimated_3", "dL Estimated_4", "dL Estimated_5", "dL Estimated_6"] +
@@ -711,7 +711,7 @@ class CalibrationConvergenceSimulator:
         print(f"Data saved to {filename}")
 
         # Optionally, save per-sample measured target poses as a separate file
-        pd.DataFrame(self.measuredTargetPoseHistory).to_csv('measuredTargetPoseHistory.csv', index=False)
+        #pd.DataFrame(self.measuredTargetPoseHistory).to_csv('measuredTargetPoseHistory.csv', index=False)
 
 
 def main(args=None):
@@ -719,7 +719,7 @@ def main(args=None):
     rclpy.init()
     robot = AR4Robot()
     robot.disable_logging()
-    simulator = CalibrationConvergenceSimulator(n=20, numIters=12, 
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=6, 
                 dQMagnitude=0.1, dLMagnitude=0.0,
                  dXMagnitude=0.1, camera_mode=True, noiseMagnitude=0.0, robot = robot)
     frame = "end_effector_link"
