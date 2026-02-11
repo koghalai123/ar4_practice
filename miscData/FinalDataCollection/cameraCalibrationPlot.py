@@ -16,7 +16,7 @@ def load_and_process_data(filename):
     tape_distances = df.iloc[:, 0].values
     
     # Get camera measurements for each condition
-    # 0 deg: columns 1-4, 30 deg: columns 5-8, 60 deg: columns 9-12
+    # 0 deg: columns 1, 2.70 deg: columns 5-8, 60 deg: columns 9-12
     camera_0deg = 15/14.6*df.iloc[:, 1:5].values
     camera_30deg = 15/14.6*df.iloc[:, 5:9].values
     camera_60deg = 15/14.6*df.iloc[:, 9:13].values
@@ -43,13 +43,13 @@ def normalize_to_20mm(data, tape_distances):
     
     return normalized_data
 
-def create_scatter_plot(tape_distances, normalized_data):
+def create_scatter_plot(tape_distances, normalized_data, normalize=True):
     """Create scatter plot of tape measure distance vs camera distance with trendline"""
     conditions = ['0°', '30°', '60°']
     colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
     markers = ['o', 's', '^']
     
-    fig, ax = plt.subplots(figsize=(9, 7))
+    fig, ax = plt.subplots(figsize=(4, 4))
     
     # Collect all data points for overall trendline
     all_tape_distances = []
@@ -86,19 +86,22 @@ def create_scatter_plot(tape_distances, normalized_data):
     # Add perfect correlation line (y = x)
     min_dist, max_dist = min(tape_distances), max(tape_distances)
     ax.plot([min_dist, max_dist], [min_dist, max_dist], 'k--', linewidth=2, 
-            label='Perfect Correlation (y=x)', alpha=0.7)
+            label='Perfect Correlation', alpha=0.7)
     
     # Fit and plot overall trendline using original (non-offset) positions
     slope, intercept, r_value, p_value, std_err = stats.linregress(all_tape_distances, all_camera_distances)
     trendline_y = [slope * x + intercept for x in [min_dist, max_dist]]
     
     ax.plot([min_dist, max_dist], trendline_y, 'purple', linewidth=3, 
-            label=f'Overall Trendline (y={slope:.3f}x+{intercept:.2f})\nR²={r_value**2:.3f}')
+            label=f'Overall Trendline \n(y={slope:.3f}x+ {intercept:.2f})')
     
     # Formatting
-    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=20)
-    ax.set_ylabel('Camera Distance [mm]', fontsize=20)
-    ax.set_title('Camera Distance vs Tape Measure Distance\n(Normalized to 20mm)', fontsize=20)
+    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=12)
+    ax.set_ylabel('Camera Distance [mm]', fontsize=12)
+    title = 'Camera Distance vs Tape Measure Distance'
+    if normalize:
+        title += ' (Normalized)'
+    ax.set_title(title, fontsize=12)
     ax.grid(True, alpha=0.3)
     
     # Set axis limits with some padding
@@ -110,9 +113,9 @@ def create_scatter_plot(tape_distances, normalized_data):
     ax.set_xticklabels([f'{int(d)}' for d in tape_distances])
     
     # Increase font size for tick labels
-    ax.tick_params(axis='both', which='major', labelsize=16)
+    ax.tick_params(axis='both', which='major', labelsize=10)
     
-    ax.legend(loc='lower right', fontsize=14)
+    ax.legend(loc='lower right', fontsize=12, labelspacing=0.0, handlelength=1.0, handletextpad=0.4)
     
     # Add statistics text box (using original positions for residuals)
     residuals = np.array(all_camera_distances) - np.array(all_tape_distances)
@@ -124,18 +127,19 @@ def create_scatter_plot(tape_distances, normalized_data):
     stats_text += f'Mean Residual: {np.mean(residuals):.2f} mm\n'
     stats_text += f'Std Residual: {np.std(residuals):.2f} mm'
     
-    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=14,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=12,
+            verticalalignment='top', linespacing=0.8,
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
     return fig, ax
 
-def create_residual_boxplot(tape_distances, normalized_data):
+def create_residual_boxplot(tape_distances, normalized_data, normalize=True):
     """Create boxplot of residuals as a function of distance"""
     conditions = ['0°', '30°', '60°']
     colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
     
-    fig, ax = plt.subplots(figsize=(9, 7))
+    fig, ax = plt.subplots(figsize=(4, 4))
     
     # Calculate residuals for each condition and distance
     for i, (condition_data, condition_name, color) in enumerate(zip(normalized_data, conditions, colors)):
@@ -164,9 +168,12 @@ def create_residual_boxplot(tape_distances, normalized_data):
     ax.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.5, label='Zero residual')
     
     # Formatting
-    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=20)
-    ax.set_ylabel('Residual (Camera - Tape) [mm]', fontsize=20)
-    ax.set_title('Measurement Residuals vs Distance', fontsize=20)
+    ax.set_xlabel('Tape Measure Distance [mm]', fontsize=12)
+    ax.set_ylabel('Residual (Camera - Tape) [mm]', fontsize=12)
+    title = 'Measurement Residuals vs Distance'
+    if normalize:
+        title += ' (Normalized)'
+    ax.set_title(title, fontsize=12)
     ax.grid(True, alpha=0.3)
     
     # Set x-axis ticks to tape distances
@@ -174,7 +181,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
     ax.set_xticklabels([f'{int(d)}' for d in tape_distances])
     
     # Increase font size for tick labels
-    ax.tick_params(axis='both', which='major', labelsize=16)
+    ax.tick_params(axis='both', which='major', labelsize=10)
     
     # Create custom legend
     legend_elements = []
@@ -182,7 +189,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
         legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.7, label=condition))
     legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', label='Zero residual'))
     
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=14)
+    ax.legend(handles=legend_elements, loc='center left', fontsize=12, labelspacing=0.0, handlelength=1.0, handletextpad=0.4)
     
     # Calculate and display overall statistics
     all_residuals = []
@@ -210,8 +217,9 @@ def create_residual_boxplot(tape_distances, normalized_data):
         stats_text += stat + '\n'
     stats_text += f'Overall: μ={overall_mean:.2f}, σ={overall_std:.2f} mm'
     
-    ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=14,
-            verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=12,
+            verticalalignment='bottom', linespacing=0.8,
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
     return fig, ax
@@ -219,28 +227,35 @@ def create_residual_boxplot(tape_distances, normalized_data):
 def main():
     """Main function to run the analysis"""
     filename = 'CameraCalibrationData.csv'
+    normalize = False  # Set to False to display actual values without normalization
     
     # Load and process data
     tape_distances, camera_0deg, camera_30deg, camera_60deg = load_and_process_data(filename)
     
-    # Normalize data to start at 20mm
+    # Prepare camera data
     camera_data = [camera_0deg, camera_30deg, camera_60deg]
-    normalized_data = normalize_to_20mm(camera_data, tape_distances)
+    
+    # Use normalized or raw data based on option
+    if normalize:
+        plot_data = normalize_to_20mm(camera_data, tape_distances)
+    else:
+        plot_data = camera_data
     
     # Create scatter plot
-    fig1, ax1 = create_scatter_plot(tape_distances, normalized_data)
+    fig1, ax1 = create_scatter_plot(tape_distances, plot_data, normalize=normalize)
     plt.savefig('camera_calibration_scatter_plot.png', dpi=300, bbox_inches='tight')
     
     # Create residual boxplot
-    fig2, ax2 = create_residual_boxplot(tape_distances, normalized_data)
+    fig2, ax2 = create_residual_boxplot(tape_distances, plot_data, normalize=normalize)
     plt.savefig('camera_calibration_residual_boxplot.png', dpi=300, bbox_inches='tight')
     
     # Print summary statistics
     print("Camera Calibration Analysis Results:")
     print("=" * 50)
+    print(f"Normalized: {normalize}")
     
     conditions = ['0°', '30°', '60°']
-    for i, (condition_data, condition_name) in enumerate(zip(normalized_data, conditions)):
+    for i, (condition_data, condition_name) in enumerate(zip(plot_data, conditions)):
         all_residuals = []
         for j, tape_dist in enumerate(tape_distances):
             camera_measurements = condition_data[j, :]
@@ -254,7 +269,7 @@ def main():
     
     # Overall statistics
     all_residuals_combined = []
-    for condition_data in normalized_data:
+    for condition_data in plot_data:
         for j, tape_dist in enumerate(tape_distances):
             camera_measurements = condition_data[j, :]
             camera_measurements = camera_measurements[~np.isnan(camera_measurements)]

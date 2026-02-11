@@ -81,149 +81,128 @@ x_offset_range = 0.4  # total spread around each integer
 x_offsets = np.linspace(-x_offset_range / 2, x_offset_range / 2, n_files)
 file_x_offsets = {filename: x_offsets[i] for i, filename in enumerate(dataframes.keys())}
 
-# Plot position error values (logarithmic y-axis)
-plt.figure()
-min_vals = []
+# Plot combined position and orientation error (logarithmic y-axes)
+fig, ax1 = plt.subplots()
+ax2 = ax1.twinx()
+
+pos_min_vals = []
+orient_min_vals = []
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
     x_offset = file_x_offsets[filename]
     x_vals = df.index + x_offset
-    mean_err = df['Position Error'] * 1000
-    std_err = df['Position Error Std'] * 1000 if 'Position Error Std' in df.columns else None
-    if std_err is not None:
-        plt.errorbar(x_vals, mean_err, yerr=std_err, label=f'Trial {counter}', color=color,
+    
+    # Position error on left axis
+    pos_mean_err = df['Position Error'] * 1000
+    pos_std_err = df['Position Error Std'] * 1000 if 'Position Error Std' in df.columns else None
+    if pos_std_err is not None:
+        ax1.errorbar(x_vals, pos_mean_err, yerr=pos_std_err, label=f'Position', color=color,
                      linewidth=2, capsize=3, capthick=1.5, elinewidth=1.2, fmt='-o', markersize=4)
     else:
-        plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
+        ax1.plot(x_vals, pos_mean_err, label=f'Position', color=color, linewidth=2, marker='o', markersize=4)
+    
+    # Orientation error on right axis (dashed lines)
+    orient_mean_err = df['Orientation Error'] * 180/np.pi
+    orient_std_err = df['Orientation Error Std'] * 180/np.pi if 'Orientation Error Std' in df.columns else None
+    if orient_std_err is not None:
+        ax2.errorbar(x_vals, orient_mean_err, yerr=orient_std_err, label=f'Orientation', color=color,
+                     linewidth=2, capsize=3, capthick=1.5, elinewidth=1.2, fmt='--s', markersize=4)
+    else:
+        ax2.plot(x_vals, orient_mean_err, label=f'Orientation', color=color, linewidth=2, linestyle='--', marker='s', markersize=4)
     
     pos_errors = df['Position Error'] * 1000
-    min_val = pos_errors[pos_errors > 0].min()
-    if min_val is not None and min_val > 0:
-        min_vals.append(min_val)
-    counter += 1
-
-plt.yscale('log')
-plt.title('Position Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [mm]', fontsize=16)
-plt.legend(fontsize=14)
-plt.grid(True, which='both', axis='y')
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-
-# Set y-axis limits based on minimum values from all datasets
-if min_vals:
-    overall_min = min(min_vals)
-    lower_lim = 10**(np.log10(overall_min) - 0.5)
-    plt.ylim(bottom=lower_lim)
-
-ax = plt.gca()
-ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
-ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
-ax.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
-ax.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax.tick_params(axis='y', which='minor', labelsize=8)
-plt.tight_layout()
-plt.savefig(f"{base_name}_position_error_log.png", dpi=300)
-
-# Plot position error values (linear y-axis)
-plt.figure()
-counter = 1
-for filename, df in dataframes.items():
-    color = file_colors[filename]
-    x_offset = file_x_offsets[filename]
-    x_vals = df.index + x_offset
-    mean_err = df['Position Error'] * 1000
-    std_err = df['Position Error Std'] * 1000 if 'Position Error Std' in df.columns else None
-    if std_err is not None:
-        plt.errorbar(x_vals, mean_err, yerr=std_err, label=f'Trial {counter}', color=color,
-                     linewidth=2, capsize=3, capthick=1.5, elinewidth=1.2, fmt='-o', markersize=4)
-    else:
-        plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
-    counter += 1
-
-plt.title('Position Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [mm]', fontsize=16)
-plt.legend(fontsize=14)
-plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_position_error_linear.png", dpi=300)
-
-# Plot orientation error values (logarithmic y-axis)
-plt.figure()
-min_vals = []
-counter = 1
-for filename, df in dataframes.items():
-    color = file_colors[filename]
-    x_offset = file_x_offsets[filename]
-    x_vals = df.index + x_offset
-    mean_err = df['Orientation Error'] * 180/np.pi
-    std_err = df['Orientation Error Std'] * 180/np.pi if 'Orientation Error Std' in df.columns else None
-    if std_err is not None:
-        plt.errorbar(x_vals, mean_err, yerr=std_err, label=f'Trial {counter}', color=color,
-                     linewidth=2, capsize=3, capthick=1.5, elinewidth=1.2, fmt='-o', markersize=4)
-    else:
-        plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
+    pos_min_val = pos_errors[pos_errors > 0].min()
+    if pos_min_val is not None and pos_min_val > 0:
+        pos_min_vals.append(pos_min_val)
     
     orient_errors = df['Orientation Error'] * 180/np.pi
-    min_val = orient_errors[orient_errors > 0].min()
-    if min_val is not None and min_val > 0:
-        min_vals.append(min_val)
+    orient_min_val = orient_errors[orient_errors > 0].min()
+    if orient_min_val is not None and orient_min_val > 0:
+        orient_min_vals.append(orient_min_val)
     counter += 1
 
-plt.yscale('log')
-plt.title('Orientation Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [degrees]', fontsize=16)
-plt.legend(fontsize=14)
-plt.grid(True, which='both', axis='y')
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
+ax1.set_yscale('log')
+ax2.set_yscale('log')
+ax1.set_title('Position and Orientation Error Values', fontsize=16)
+ax1.set_xlabel('Iteration', fontsize=16)
+ax1.set_ylabel('Position Error [mm]', fontsize=16)
+ax2.set_ylabel('Orientation Error [degrees]', fontsize=16)
 
-# Set y-axis limits based on minimum values from all datasets
-if min_vals:
-    overall_min = min(min_vals)
-    lower_lim = 10**(np.log10(overall_min) - 0.5)
-    plt.ylim(bottom=lower_lim)
+# Set y-axis limits based on minimum values
+if pos_min_vals:
+    pos_overall_min = min(pos_min_vals)
+    pos_lower_lim = 10**(np.log10(pos_overall_min) - 0.5)
+    ax1.set_ylim(bottom=pos_lower_lim)
 
-ax = plt.gca()
-ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
-ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
-ax.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
-ax.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax.tick_params(axis='y', which='minor', labelsize=8)
+if orient_min_vals:
+    orient_overall_min = min(orient_min_vals)
+    orient_lower_lim = 10**(np.log10(orient_overall_min) - 0.5)
+    ax2.set_ylim(bottom=orient_lower_lim)
+
+ax1.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
+ax1.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
+ax1.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
+ax1.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
+ax1.tick_params(axis='y', which='minor', labelsize=8)
+ax1.tick_params(axis='both', which='major', labelsize=16)
+
+ax2.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
+ax2.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
+ax2.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
+ax2.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
+ax2.tick_params(axis='y', which='minor', labelsize=8)
+ax2.tick_params(axis='y', which='major', labelsize=16)
+
+ax1.grid(True, which='both', axis='y')
+
+# Combine legends from both axes
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right')
+
 plt.tight_layout()
-plt.savefig(f"{base_name}_orientation_error_log.png", dpi=300)
+plt.savefig(f"{base_name}_combined_error_log.png", dpi=300)
 
-# Plot orientation error values (linear y-axis)
-plt.figure()
+# Plot combined position error and dL J6 calibration parameter (linear y-axes)
+fig, ax1 = plt.subplots()
+ax2 = ax1.twinx()
+
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
     x_offset = file_x_offsets[filename]
     x_vals = df.index + x_offset
-    mean_err = df['Orientation Error'] * 180/np.pi
-    std_err = df['Orientation Error Std'] * 180/np.pi if 'Orientation Error Std' in df.columns else None
-    if std_err is not None:
-        plt.errorbar(x_vals, mean_err, yerr=std_err, label=f'Trial {counter}', color=color,
+    
+    # Position error on left axis
+    pos_mean_err = df['Position Error'] * 1000
+    pos_std_err = df['Position Error Std'] * 1000 if 'Position Error Std' in df.columns else None
+    if pos_std_err is not None:
+        ax1.errorbar(x_vals, pos_mean_err, yerr=pos_std_err, label=f'Position Error', color=color,
                      linewidth=2, capsize=3, capthick=1.5, elinewidth=1.2, fmt='-o', markersize=4)
     else:
-        plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
+        ax1.plot(x_vals, pos_mean_err, label=f'Position Error', color=color, linewidth=2, marker='o', markersize=4)
+    
+    # dL J6 calibration parameter on right axis (dashed lines)
+    if 'dL Estimated_6' in df.columns:
+        dl_j6 = df['dL Estimated_6'].abs()
+        ax2.plot(x_vals, dl_j6, label=f'dL J6', color=color, linewidth=2, linestyle='--', marker='s', markersize=4)
     counter += 1
 
-plt.title('Orientation Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [degrees]', fontsize=16)
-plt.legend(fontsize=14)
-plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
+ax1.set_title('Position Error and dL J6 Calibration Parameter', fontsize=16)
+ax1.set_xlabel('Iteration', fontsize=16)
+ax1.set_ylabel('Position Error [mm]', fontsize=16)
+ax2.set_ylabel('dL J6 [m]', fontsize=16)
+ax1.tick_params(axis='both', which='major', labelsize=16)
+ax2.tick_params(axis='y', which='major', labelsize=16)
+
+# Combine legends from both axes
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right')
+
 plt.tight_layout()
-plt.savefig(f"{base_name}_orientation_error_linear.png", dpi=300)
+plt.savefig(f"{base_name}_position_and_dL_linear.png", dpi=300)
 
 # Plot estimated target pose values (difference from final value)
 plt.figure()
