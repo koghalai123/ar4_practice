@@ -6,15 +6,7 @@ import os
 
 # List of CSV files to load and plot
 csv_filenames = [
-    'successfulCalibration9.csv',
-    'successfulCalibration10.csv',
-    'successfulCalibration11.csv',
-    'successfulCalibration12.csv',
-    'successfulCalibration13.csv',
-    'successfulCalibration14.csv',
-    'successfulCalibration15.csv',
-    'successfulCalibration16.csv',
-    # Add more filenames as needed
+    'linkLengthModelEnabled3.csv'
 ]
 
 # Load dial indicator validation data
@@ -258,19 +250,18 @@ plt.yticks(fontsize=16)
 plt.tight_layout()
 plt.savefig(f"{base_name}_est_target_pose.png", dpi=300)
 
-# Plot calibration parameters (difference from final value)
+# Plot calibration parameters (absolute value)
 plt.figure()
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
-    calib_cols = [col for col in df.columns if 'Estimated' in col and col not in pose_cols]
+    calib_cols = [col for col in df.columns if col == 'dL Estimated_6']
     for col in calib_cols:
-        diff = df[col] - df[col].iloc[-1]
-        plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
+        plt.plot(df[col].abs(), label=col, linewidth=2)
 
-plt.title('Calibration Parameters (Difference from Final Value) - Combined', fontsize=16)
+plt.title('Calibration Parameter dL J6', fontsize=16)
 plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Value - Final Value', fontsize=16)
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=16)
+plt.ylabel('Absolute Value', fontsize=16)
+plt.legend(loc='upper right', fontsize=14)
 plt.grid(False)
 plt.xticks(fontsize=16)
 plt.yticks(fontsize=16)
