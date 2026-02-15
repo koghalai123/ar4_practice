@@ -1,8 +1,20 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, ScalarFormatter, FormatStrFormatter
+from matplotlib.ticker import LogLocator, ScalarFormatter, FormatStrFormatter, MultipleLocator
 import numpy as np
 import os
+
+# Global figure size (width, height) in inches
+FIGURE_SIZE = (4.5, 3)
+
+# Global font size for all text elements
+FONT_SIZE = 10
+
+# Font size for axis tick labels
+TICK_FONT_SIZE = 10
+
+# Layout padding (smaller = less whitespace)
+LAYOUT_PAD = 0.3
 
 # List of CSV files to load and plot
 csv_filenames = [
@@ -82,7 +94,7 @@ x_offsets = np.linspace(-x_offset_range / 2, x_offset_range / 2, n_files)
 file_x_offsets = {filename: x_offsets[i] for i, filename in enumerate(dataframes.keys())}
 
 # Plot combined position and orientation error (logarithmic y-axes)
-fig, ax1 = plt.subplots()
+fig, ax1 = plt.subplots(figsize=FIGURE_SIZE)
 ax2 = ax1.twinx()
 
 pos_min_vals = []
@@ -90,8 +102,7 @@ orient_min_vals = []
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
-    x_offset = file_x_offsets[filename]
-    x_vals = df.index + x_offset
+    x_vals = df.index
     
     # Position error on left axis
     pos_mean_err = df['Position Error'] * 1000
@@ -124,10 +135,10 @@ for filename, df in dataframes.items():
 
 ax1.set_yscale('log')
 ax2.set_yscale('log')
-ax1.set_title('Position and Orientation Error Values', fontsize=16)
-ax1.set_xlabel('Iteration', fontsize=16)
-ax1.set_ylabel('Position Error [mm]', fontsize=16)
-ax2.set_ylabel('Orientation Error [degrees]', fontsize=16)
+ax1.set_title('Position and Orientation Error Values', fontsize=FONT_SIZE)
+ax1.set_xlabel('Iteration', fontsize=FONT_SIZE)
+ax1.set_ylabel('Position Error [mm]', fontsize=FONT_SIZE)
+ax2.set_ylabel('Orientation Error [degrees]', fontsize=FONT_SIZE)
 
 # Set y-axis limits based on minimum values
 if pos_min_vals:
@@ -144,35 +155,35 @@ ax1.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
 ax1.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
 ax1.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
 ax1.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax1.tick_params(axis='y', which='minor', labelsize=8)
-ax1.tick_params(axis='both', which='major', labelsize=16)
+ax1.xaxis.set_major_locator(MultipleLocator(1))
+ax1.tick_params(axis='y', which='minor', labelsize=TICK_FONT_SIZE-2)
+ax1.tick_params(axis='both', which='major', labelsize=TICK_FONT_SIZE)
 
 ax2.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
 ax2.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
 ax2.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
 ax2.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax2.tick_params(axis='y', which='minor', labelsize=8)
-ax2.tick_params(axis='y', which='major', labelsize=16)
+ax2.tick_params(axis='y', which='minor', labelsize=TICK_FONT_SIZE-2)
+ax2.tick_params(axis='y', which='major', labelsize=TICK_FONT_SIZE)
 
 ax1.grid(True, which='both', axis='y')
 
 # Combine legends from both axes
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
-ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right')
+ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=FONT_SIZE, loc='upper right')
 
-plt.tight_layout()
-plt.savefig(f"{base_name}_combined_error_log.png", dpi=300)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_combined_error_log.png", dpi=300, bbox_inches='tight')
 
 # Plot combined position error and dL J6 calibration parameter (linear y-axes)
-fig, ax1 = plt.subplots()
+fig, ax1 = plt.subplots(figsize=FIGURE_SIZE)
 ax2 = ax1.twinx()
 
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
-    x_offset = file_x_offsets[filename]
-    x_vals = df.index + x_offset
+    x_vals = df.index
     
     # Position error on left axis
     pos_mean_err = df['Position Error'] * 1000
@@ -189,23 +200,24 @@ for filename, df in dataframes.items():
         ax2.plot(x_vals, dl_j6, label=f'dL J6', color=color, linewidth=2, linestyle='--', marker='s', markersize=4)
     counter += 1
 
-ax1.set_title('Position Error and dL J6 Calibration Parameter', fontsize=16)
-ax1.set_xlabel('Iteration', fontsize=16)
-ax1.set_ylabel('Position Error [mm]', fontsize=16)
-ax2.set_ylabel('dL J6 [m]', fontsize=16)
-ax1.tick_params(axis='both', which='major', labelsize=16)
-ax2.tick_params(axis='y', which='major', labelsize=16)
+#ax1.set_title('Position Error and dL J6 Calibration Parameter', fontsize=FONT_SIZE)
+ax1.set_xlabel('Iteration', fontsize=FONT_SIZE)
+ax1.set_ylabel('Position Error [mm]', fontsize=FONT_SIZE)
+ax2.set_ylabel('dL J6 []', fontsize=FONT_SIZE)
+ax1.xaxis.set_major_locator(MultipleLocator(1))
+ax1.tick_params(axis='both', which='major', labelsize=TICK_FONT_SIZE)
+ax2.tick_params(axis='y', which='major', labelsize=TICK_FONT_SIZE)
 
 # Combine legends from both axes
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
-ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper right')
+ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=FONT_SIZE, loc='upper right')
 
-plt.tight_layout()
-plt.savefig(f"{base_name}_position_and_dL_linear.png", dpi=300)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_position_and_dL_linear.png", dpi=300, bbox_inches='tight')
 
 # Plot estimated target pose values (difference from final value)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 pose_cols = ['Estimated Target X', 'Estimated Target Y', 'Estimated Target Z',
              'Estimated Target Roll', 'Estimated Target Pitch', 'Estimated Target Yaw']
 
@@ -219,35 +231,35 @@ for filename, df in dataframes.items():
                 diff = diff * 180/np.pi
             plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
-plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Value - Final Value [mm/degrees]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Value - Final Value [mm/degrees]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_est_target_pose.png", dpi=300)
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_est_target_pose.png", dpi=300, bbox_inches='tight')
 
 # Plot calibration parameters (absolute value)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     calib_cols = [col for col in df.columns if col == 'dL Estimated_6']
     for col in calib_cols:
         plt.plot(df[col].abs(), label=col, linewidth=2)
 
-plt.title('Calibration Parameter dL J6', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Absolute Value', fontsize=16)
-plt.legend(loc='upper right', fontsize=14)
+plt.title('Calibration Parameter dL J6', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Absolute Value', fontsize=FONT_SIZE)
+plt.legend(loc='upper right', fontsize=FONT_SIZE)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_calib_params.png", dpi=300)
-
-plt.figure(figsize=(10, 6))
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_calib_params.png", dpi=300, bbox_inches='tight')
 
 # Collect the three datasets
 box_data = []
@@ -295,7 +307,7 @@ if final_pos_error is not None:
 
 # Create the box plot
 if len(box_data) >= 4:
-    fig, ax = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, constrained_layout=True)
     box = ax.boxplot(
         box_data,
         labels=box_labels,
@@ -314,17 +326,17 @@ if len(box_data) >= 4:
         patch.set_alpha(0.8)
 
     ax.set_yscale('log')
-    ax.set_title('Position Error Comparison', fontsize=22)
-    ax.set_ylabel('Position Error [mm]', fontsize=18)
+    ax.set_title('Position Error Comparison', fontsize=FONT_SIZE)
+    ax.set_ylabel('Position Error [mm]', fontsize=FONT_SIZE)
     ax.grid(True, which='both', axis='y', alpha=0.3)
-    ax.set_xticklabels(box_labels, fontsize=14, rotation=10)
+    ax.set_xticklabels(box_labels, fontsize=TICK_FONT_SIZE, rotation=10)
     ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
     ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 4, 6, 8], numticks=100))
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.1e'))
     ax.yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))
-    ax.tick_params(axis='y', which='major', labelsize=14)
-    ax.tick_params(axis='y', which='minor', length=4, labelsize=14)
-    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300)
+    ax.tick_params(axis='y', which='major', labelsize=TICK_FONT_SIZE)
+    ax.tick_params(axis='y', which='minor', length=4, labelsize=TICK_FONT_SIZE)
+    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300, bbox_inches='tight')
 
 plt.show()
 

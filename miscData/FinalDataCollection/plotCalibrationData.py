@@ -1,8 +1,24 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, ScalarFormatter, FormatStrFormatter
+from matplotlib.ticker import LogLocator, ScalarFormatter, FormatStrFormatter, MultipleLocator
 import numpy as np
 import os
+
+# Global figure size (width, height) in inches
+FIGURE_SIZE = (4.5, 3)
+
+# Global font size for titles, labels, and legends
+FONT_SIZE = 10
+
+# Font size for axis tick labels
+TICK_FONT_SIZE = 10
+
+
+# Layout padding (smaller = less whitespace)
+LAYOUT_PAD = 0.3
+
+# Legend label spacing (vertical space between legend entries)
+LEGEND_LABELSPACING = 0.2
 
 # List of CSV files to load and plot
 csv_filenames = [
@@ -90,7 +106,7 @@ x_offsets = np.linspace(-x_offset_range / 2, x_offset_range / 2, n_files)
 file_x_offsets = {filename: x_offsets[i] for i, filename in enumerate(dataframes.keys())}
 
 # Plot position error values (logarithmic y-axis)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 min_vals = []
 counter = 1
 for filename, df in dataframes.items():
@@ -112,13 +128,13 @@ for filename, df in dataframes.items():
     counter += 1
 
 plt.yscale('log')
-plt.title('Position Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [mm]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Position Error Values', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Position Error [mm]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(True, which='both', axis='y')
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
 
 # Set y-axis limits based on minimum values from all datasets
 if min_vals:
@@ -131,12 +147,13 @@ ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
 ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
 ax.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
 ax.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax.tick_params(axis='y', which='minor', labelsize=8)
-plt.tight_layout()
-plt.savefig(f"{base_name}_position_error_log.png", dpi=300)
+ax.tick_params(axis='y', which='minor', labelsize=TICK_FONT_SIZE-6)
+ax.xaxis.set_major_locator(MultipleLocator(1))
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_position_error_log.png", dpi=300, bbox_inches='tight')
 
 # Plot position error values (linear y-axis)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
@@ -151,18 +168,19 @@ for filename, df in dataframes.items():
         plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
     counter += 1
 
-plt.title('Position Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Position Error [mm]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Position Error Values', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Position Error [mm]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_position_error_linear.png", dpi=300)
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_position_error_linear.png", dpi=300, bbox_inches='tight')
 
 # Plot orientation error values (logarithmic y-axis)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 min_vals = []
 counter = 1
 for filename, df in dataframes.items():
@@ -184,13 +202,13 @@ for filename, df in dataframes.items():
     counter += 1
 
 plt.yscale('log')
-plt.title('Orientation Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [degrees]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Orientation Error Values', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Orientation Error [degrees]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(True, which='both', axis='y')
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
 
 # Set y-axis limits based on minimum values from all datasets
 if min_vals:
@@ -203,12 +221,13 @@ ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
 ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs='auto', numticks=100))
 ax.yaxis.set_major_formatter(FormatStrFormatter('%.6g'))
 ax.yaxis.set_minor_formatter(FormatStrFormatter('%.6g'))
-ax.tick_params(axis='y', which='minor', labelsize=8)
-plt.tight_layout()
-plt.savefig(f"{base_name}_orientation_error_log.png", dpi=300)
+ax.tick_params(axis='y', which='minor', labelsize=TICK_FONT_SIZE-6)
+ax.xaxis.set_major_locator(MultipleLocator(1))
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_orientation_error_log.png", dpi=300, bbox_inches='tight')
 
 # Plot orientation error values (linear y-axis)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 counter = 1
 for filename, df in dataframes.items():
     color = file_colors[filename]
@@ -223,18 +242,19 @@ for filename, df in dataframes.items():
         plt.plot(x_vals, mean_err, label=f'Trial {counter}', color=color, linewidth=2, marker='o', markersize=4)
     counter += 1
 
-plt.title('Orientation Error Values', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Orientation Error [degrees]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Orientation Error Values', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Orientation Error [degrees]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_orientation_error_linear.png", dpi=300)
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_orientation_error_linear.png", dpi=300, bbox_inches='tight')
 
 # Plot estimated target pose values (difference from final value)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 pose_cols = ['Estimated Target X', 'Estimated Target Y', 'Estimated Target Z',
              'Estimated Target Roll', 'Estimated Target Pitch', 'Estimated Target Yaw']
 
@@ -248,18 +268,19 @@ for filename, df in dataframes.items():
                 diff = diff * 180/np.pi
             plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
-plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Value - Final Value [mm/degrees]', fontsize=16)
-plt.legend(fontsize=14)
+plt.title('Estimated Target Pose (Difference from Final Value) - Combined', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Value - Final Value [mm/degrees]', fontsize=FONT_SIZE)
+plt.legend(fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_est_target_pose.png", dpi=300)
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_est_target_pose.png", dpi=300, bbox_inches='tight')
 
 # Plot calibration parameters (difference from final value)
-plt.figure()
+plt.figure(figsize=FIGURE_SIZE)
 for filename, df in dataframes.items():
     label_base = os.path.splitext(filename)[0]
     calib_cols = [col for col in df.columns if 'Estimated' in col and col not in pose_cols]
@@ -267,41 +288,51 @@ for filename, df in dataframes.items():
         diff = df[col] - df[col].iloc[-1]
         plt.plot(diff, label=f'{label_base} - {col}', linewidth=2)
 
-plt.title('Calibration Parameters (Difference from Final Value) - Combined', fontsize=16)
-plt.xlabel('Iteration', fontsize=16)
-plt.ylabel('Value - Final Value', fontsize=16)
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=16)
+plt.title('Calibration Parameters (Difference from Final Value) - Combined', fontsize=FONT_SIZE)
+plt.xlabel('Iteration', fontsize=FONT_SIZE)
+plt.ylabel('Value - Final Value', fontsize=FONT_SIZE)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=FONT_SIZE, labelspacing=LEGEND_LABELSPACING)
 plt.grid(False)
-plt.xticks(fontsize=16)
-plt.yticks(fontsize=16)
-plt.tight_layout()
-plt.savefig(f"{base_name}_calib_params.png", dpi=300)
-
-plt.figure(figsize=(10, 6))
+plt.gca().xaxis.set_major_locator(MultipleLocator(1))
+plt.xticks(fontsize=TICK_FONT_SIZE)
+plt.yticks(fontsize=TICK_FONT_SIZE)
+plt.tight_layout(pad=LAYOUT_PAD)
+plt.savefig(f"{base_name}_calib_params.png", dpi=300, bbox_inches='tight')
 
 # Collect the three datasets
 box_data = []
 box_labels = []
 
-# 1. Initial position errors from calibration files
+
+# 1. Initial position and orientation errors from calibration files
 initial_errors = []
+initial_orient_errors = []
 for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
         initial_errors.append(df['Position Error'].iloc[0] * 1000)
+    if 'Orientation Error' in df.columns and len(df) > 0:
+        initial_orient_errors.append(df['Orientation Error'].iloc[0] * 180/np.pi)
 
-print("Camera Initial Errors:", np.mean(initial_errors))  # Print initial errors
+print("Camera Initial Errors:", np.mean(initial_errors))  # Print initial position errors
+if initial_orient_errors:
+    print("Camera Initial Orientation Errors:", np.mean(initial_orient_errors))  # Print initial orientation errors
 
 if initial_errors:
     box_data.append(initial_errors)
     box_labels.append('Camera Initial\nError')
 
-# 2. Final position errors from calibration files  
+# 2. Final position and orientation errors from calibration files  
 final_errors = []
+final_orient_errors = []
 for filename, df in dataframes.items():
     if 'Position Error' in df.columns and len(df) > 0:
         final_errors.append(df['Position Error'].iloc[-1] * 1000)
+    if 'Orientation Error' in df.columns and len(df) > 0:
+        final_orient_errors.append(df['Orientation Error'].iloc[-1] * 180/np.pi)
 
-print("Camera Final Errors:", np.mean(final_errors))  # Print final errors
+print("Camera Final Errors:", np.mean(final_errors))  # Print final position errors
+if final_orient_errors:
+    print("Camera Final Orientation Errors:", np.mean(final_orient_errors))  # Print final orientation errors
 
 if final_errors:
     box_data.append(final_errors)
@@ -325,7 +356,7 @@ if final_pos_error is not None:
 
 # Create the box plot
 if len(box_data) >= 4:
-    fig, ax = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, constrained_layout=True)
     box = ax.boxplot(
         box_data,
         labels=box_labels,
@@ -344,17 +375,17 @@ if len(box_data) >= 4:
         patch.set_alpha(0.8)
 
     ax.set_yscale('log')
-    ax.set_title('Position Error Comparison', fontsize=22)
-    ax.set_ylabel('Position Error [mm]', fontsize=18)
+    ax.set_title('Position Error Comparison', fontsize=FONT_SIZE)
+    ax.set_ylabel('Position Error [mm]', fontsize=FONT_SIZE)
     ax.grid(True, which='both', axis='y', alpha=0.3)
-    ax.set_xticklabels(box_labels, fontsize=14, rotation=10)
+    ax.set_xticklabels(box_labels, fontsize=TICK_FONT_SIZE, rotation=10)
     ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
     ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 4, 6, 8], numticks=100))
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.1e'))
     ax.yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))
-    ax.tick_params(axis='y', which='major', labelsize=14)
-    ax.tick_params(axis='y', which='minor', length=4, labelsize=14)
-    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300)
+    ax.tick_params(axis='y', which='major', labelsize=TICK_FONT_SIZE)
+    ax.tick_params(axis='y', which='minor', length=4, labelsize=TICK_FONT_SIZE)
+    plt.savefig(f"{base_name}_simple_boxplot.png", dpi=300, bbox_inches='tight')
 
 plt.show()
 
