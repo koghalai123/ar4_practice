@@ -30,7 +30,7 @@ class ArucoPoseEstimator(Node):
         #on the d405 use this:
         self.color_sub = self.create_subscription(
             Image,
-            '/camera/camera/color/image_rect_raw',  # for D435i
+            '/camera/camera/color/image_raw',  # D435-type (publishes image_raw)
             # '/camera/camera/color/image_rect_raw' #for d405
             self.image_callback,
             10)

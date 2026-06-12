@@ -374,6 +374,11 @@ class CalibrationConvergenceSimulator:
         if camera_to_target_meas is None:
             self.camera_to_target_meas = camera_to_target_meas_test
             camera_to_target_meas = camera_to_target_meas_test
+        else:
+            # A real measurement was provided -- store it so compute_jacobians()
+            # (which reads self.camera_to_target_meas) uses the actual reading
+            # rather than the stale simulated test value.
+            self.camera_to_target_meas = camera_to_target_meas
         worldToTargetMeasured = self.get_fk_calibration_model(joint_positions = joint_positions_commanded,
                                                                  joint_lengths = joint_lengths_est,
                                                                  XOffsets = self.XNominal,

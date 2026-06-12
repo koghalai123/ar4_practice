@@ -6,13 +6,17 @@ import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
 from scipy.spatial.transform import Rotation as R
 import rclpy
+from rclpy.qos import QoSProfile, DurabilityPolicy
 
 
 
 class SurfacePublisher(Node):
     def __init__(self):
         super().__init__('surface_publisher')
-        self.marker_pub = self.create_publisher(MarkerArray, 'surface_marker', 10)
+        # Latched (transient-local) QoS so RViz receives the most recent markers
+        # as soon as it subscribes, even between the sparse measurement updates.
+        marker_qos = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.marker_pub = self.create_publisher(MarkerArray, 'surface_marker', marker_qos)
 
     '''def publishMarkers(self):
         
