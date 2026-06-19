@@ -217,7 +217,10 @@ class MoveItActionClient(Node):
                 'joint_3': (math.radians(-89), math.radians(52)),     # -1.553 to 0.908 rad
                 'joint_4': (math.radians(-180), math.radians(180)),   # -3.142 to 3.142 rad
                 'joint_5': (math.radians(-105), math.radians(105)),   # -1.833 to 1.833 rad
-                'joint_6': (math.radians(-220), math.radians(220))    # -3.142 to 3.142 rad
+                # Must match the mk3 URDF/firmware limit (+-180 deg). The previous
+                # +-220 let through J6 targets the hardware can never reach, which
+                # left trajectory goals hanging until move_group timed out (-6).
+                'joint_6': (math.radians(-180), math.radians(180))    # -3.142 to 3.142 rad
             }
             
             # Safety margin from limits (in radians) - adjust as needed
@@ -310,10 +313,12 @@ class MoveItActionClient(Node):
                 return False
             
             self.log_info("Goal accepted, waiting for result...")
-            
-            # Wait for the result
+
+            # Wait for the result. Must comfortably exceed the worst-case motion
+            # duration: abandoning a goal mid-execution leaves the robot moving and
+            # cascades into failures on subsequent goals.
             result_future = goal_handle.get_result_async()
-            rclpy.spin_until_future_complete(self, result_future, timeout_sec=5.0)
+            rclpy.spin_until_future_complete(self, result_future, timeout_sec=60.0)
             
             result = result_future.result()
             if result and result.result.error_code.val == 1:  # SUCCESS

@@ -1,0 +1,262 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  language=Python,
+}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\vecop}{\operatorname{vec}}
+
+\title{Kinematic Calibration: Least-Squares Formulation}
+\author{AR4 Calibration --- \texttt{calibrationConvergenceSimulation.py}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note documents the mathematics of the iterative kinematic calibration used in
+\texttt{calibrationConvergenceSimulation.py}. The procedure is an iterative
+(Gauss--Newton) weighted linear least-squares estimator: at each iteration it
+linearizes the forward-kinematics measurement model about the current parameter
+estimate, forms a stacked residual and Jacobian over all samples, solves the
+resulting overdetermined linear system by SVD, and applies a damped, clipped,
+accumulated parameter update. The active parameter set consists of the joint-angle
+offsets and the base/camera extrinsic offset (12 parameters total).
+\end{abstract}
+
+\begin{quote}
+\small\textbf{Note on link lengths.} The code declares a set of link-length symbols
+$l_1,\dots,l_6$, but the line that would multiply them into the kinematic chain
+(\texttt{symbolic\_matrix[:3,3] = symbolic\_matrix[:3,3]\,\#*self.l[i-1]}, line 188) is
+\emph{commented out}. The forward kinematics therefore never depends on the link
+lengths, their Jacobian columns are identically zero, and the corresponding estimates
+remain at machine-epsilon zero. Because they contribute nothing, the link-length
+parameters are omitted from the formulation below.
+\end{quote}
+
+\section{Parameter vector}
+The unknown is a correction vector $\bm{\theta} \in \R^{12}$ partitioned into two
+physical groups:
+\begin{equation}
+\bm{\theta} =
+\begin{bmatrix}
+\Delta q_1 \\ \Delta q_2 \\ \vdots \\ \Delta q_6 \\[4pt]
+\Delta x_1 \\ \Delta x_2 \\ \vdots \\ \Delta x_6
+\end{bmatrix}
+\quad
+\begin{aligned}
+&\left.\vphantom{\begin{matrix}\Delta q_1\\\Delta q_2\\\vdots\\\Delta q_6\end{matrix}}\right\}\;
+   \Delta Q\ \text{(joint-angle offsets, 6)} \\[4pt]
+&\left.\vphantom{\begin{matrix}\Delta x_1\\\Delta x_2\\\vdots\\\Delta x_6\end{matrix}}\right\}\;
+   \Delta X\ \text{(base/camera offset, 6)}
+\end{aligned}
+\end{equation}
+\begin{itemize}
+  \item $\Delta Q$ (6): per-joint angular zero offsets.
+  \item $\Delta X$ (6): world$\to$base (or world$\to$camera) extrinsic offset, two
+        translation and three rotation components, with the $z$ translation pinned
+        to $0$.
+\end{itemize}
+
+\section{Measurement model (forward kinematics)}
+The kinematic chain is assembled symbolically as a product of $4\times4$ homogeneous
+transforms (lines 189--202). In camera mode it predicts the world-to-target pose:
+\begin{equation}
+T_{\text{origin}\to\text{target}}(\bm{\theta}, \bm{c})
+= T_{\text{origin}\to\text{base}}(\bm{x})\;
+\Bigg(\prod_{i=1}^{6} T_i(q_i)\Bigg)\;
+T_{\text{camera}\to\text{target}}(\bm{c}),
+\end{equation}
+where $\bm{c}\in\R^6$ is the measured camera-to-marker pose. The predicted pose is
+read off this matrix as
+\begin{align}
+\bm{t}(\bm{\theta}) &= T_{\text{origin}\to\text{target}}[\,0\!:\!3,\,3\,] \in \R^{3}
+&&\text{(translation)},\\
+R(\bm{\theta})       &= T_{\text{origin}\to\text{target}}[\,0\!:\!3,\,0\!:\!3\,] \in \R^{3\times3}
+&&\text{(rotation)},\\
+\bm{r}(\bm{\theta})  &= \vecop\big(R(\bm{\theta})\big) \in \R^{9}
+&&\text{(flattened rotation)}.
+\end{align}
+Orientation is represented by the nine raw rotation-matrix entries rather than
+Euler angles or quaternions. This keeps the orientation residual linear in the
+matrix and avoids angle-wrap and parameterization singularities.
+
+\section{Jacobian (per sample)}
+The Jacobians of the predicted pose with respect to the parameters are computed
+\emph{once} symbolically (\texttt{sympy}) and converted to fast numerical functions
+via \texttt{lambdify} (lines 213--233):
+\begin{equation}
+J_t(\bm{\theta}) = \frac{\partial \bm{t}}{\partial \bm{\theta}} \in \R^{3\times12},
+\qquad
+J_R(\bm{\theta}) = \frac{\partial \bm{r}}{\partial \bm{\theta}} \in \R^{9\times12}.
+\end{equation}
+For sample $k$ they are evaluated numerically at that sample's commanded joint
+angles $\bm{q}^{(k)}$ (the current operating point) and measured pose $\bm{c}^{(k)}$
+(lines 461--509), giving the numeric blocks $J_t^{(k)} \in \R^{3\times12}$ and
+$J_R^{(k)} \in \R^{9\times12}$.
+
+\section{Residual vector (per sample)}
+For each sample $k$ the residual is the difference between the measured
+(ground-truth) pose and the model prediction (lines 513--548):
+\begin{align}
+\Delta \bm{t}^{(k)} &= \bm{t}^{(k)}_{\text{actual}} - \bm{t}^{(k)}_{\text{expected}} \in \R^{3},\\
+\Delta \bm{r}^{(k)} &= \vecop\!\big(R^{(k)}_{\text{actual}} - R^{(k)}_{\text{expected}}\big) \in \R^{9},
+\end{align}
+where ``actual'' is the camera-measured target pose and ``expected'' is the model
+prediction using the current parameter estimate.
+
+\section{Assembling the system matrix \texorpdfstring{$A$}{A} and right-hand side \texorpdfstring{$\bm{b}$}{b}}
+\label{sec:assembly}
+Let there be $n$ samples in one iteration. The system is built in three steps,
+mirroring the code (\texttt{compute\_jacobians}, lines 499--507, and
+\texttt{compute\_calibration\_parameters}, lines 569--573).
+
+\paragraph{Step 1 --- per-sample evaluation.}
+For each sample $k = 1,\dots,n$, evaluate the translation and rotation Jacobian
+blocks and the two residual blocks:
+\[
+J_t^{(k)} \in \R^{3\times12}, \quad
+J_R^{(k)} \in \R^{9\times12}, \quad
+\Delta\bm{t}^{(k)} \in \R^{3}, \quad
+\Delta\bm{r}^{(k)} \in \R^{9}.
+\]
+
+\paragraph{Step 2 --- vertical stacking by type.}
+The per-sample blocks are stacked vertically (\texttt{np.vstack}), keeping all
+translation rows together and all rotation rows together:
+\begin{equation}
+\mathbf{J}_t =
+\begin{bmatrix} J_t^{(1)} \\ J_t^{(2)} \\ \vdots \\ J_t^{(n)} \end{bmatrix} \in \R^{3n\times12},
+\qquad
+\mathbf{J}_R =
+\begin{bmatrix} J_R^{(1)} \\ J_R^{(2)} \\ \vdots \\ J_R^{(n)} \end{bmatrix} \in \R^{9n\times12},
+\end{equation}
+\begin{equation}
+\Delta\mathbf{t} =
+\begin{bmatrix} \Delta\bm{t}^{(1)} \\ \vdots \\ \Delta\bm{t}^{(n)} \end{bmatrix} \in \R^{3n},
+\qquad
+\Delta\mathbf{r} =
+\begin{bmatrix} \Delta\bm{r}^{(1)} \\ \vdots \\ \Delta\bm{r}^{(n)} \end{bmatrix} \in \R^{9n}.
+\end{equation}
+The row ordering of $\mathbf{J}_t$ matches that of $\Delta\mathbf{t}$ sample by sample
+(and likewise for the rotation blocks), so each row of the stacked system is one
+scalar equation about one pose component of one sample.
+
+\paragraph{Step 3 --- weight and concatenate the two blocks.}
+With translation weight $w_t = 1.0$ and rotation weight $w_R = 0.5$, the full system
+matrix and right-hand side are
+\begin{equation}
+A =
+\begin{bmatrix} w_t\,\mathbf{J}_t \\[4pt] w_R\,\mathbf{J}_R \end{bmatrix} \in \R^{12n\times12},
+\qquad
+\bm{b} =
+\begin{bmatrix} w_t\,\Delta\mathbf{t} \\[4pt] w_R\,\Delta\mathbf{r} \end{bmatrix} \in \R^{12n}.
+\end{equation}
+Written out fully, $A$ is the $12n \times 12$ matrix
+\begin{equation}
+A =
+\begin{bmatrix}
+w_t\,J_t^{(1)} \\ \vdots \\ w_t\,J_t^{(n)} \\[3pt]
+w_R\,J_R^{(1)} \\ \vdots \\ w_R\,J_R^{(n)}
+\end{bmatrix},
+\qquad
+\bm{b} =
+\begin{bmatrix}
+w_t\,\Delta\bm{t}^{(1)} \\ \vdots \\ w_t\,\Delta\bm{t}^{(n)} \\[3pt]
+w_R\,\Delta\bm{r}^{(1)} \\ \vdots \\ w_R\,\Delta\bm{r}^{(n)}
+\end{bmatrix}.
+\end{equation}
+So $A$ has $12n$ rows ($3n$ translation equations followed by $9n$ rotation
+equations) and $12$ columns (one per parameter in $\bm{\theta}$).
+
+\section{Least-squares solution}
+With $12n \gg 12$ the stacked system is overdetermined and has no exact solution, so
+it is solved in the least-squares sense (equivalently, by minimizing
+$\lVert A\bm{\theta} - \bm{b}\rVert_2^2$) using the Moore--Penrose pseudo-inverse
+$A^{+}$:
+\begin{equation}
+A\,\bm{\theta} = \bm{b}
+\quad\longrightarrow\quad
+\bm{\theta}^{\star} = A^{+}\,\bm{b} = (A^\top A)^{-1} A^\top \bm{b}.
+\end{equation}
+In code this is computed with
+\begin{lstlisting}
+errorEstimates, residuals, rank, singular_values = np.linalg.lstsq(AMat, bMat, rcond=None)
+\end{lstlisting}
+which forms the pseudo-inverse via singular value decomposition rather than the
+explicit normal-equation product $(A^\top A)^{-1} A^\top$. The SVD route is
+numerically stable under rank deficiency, and the returned \texttt{rank} and
+\texttt{singular\_values} expose unobservable parameter combinations.
+
+\section{Damped, clipped, accumulated update}
+The raw least-squares solution is not applied in full. A relaxation factor and
+per-group magnitude caps are applied (lines 593--596):
+\begin{lstlisting}
+updateCoefficient = 0.5
+errorEstimates[0:6]   = clip(0.5 * errorEstimates[0:6],  -5, 5)   # dQ
+errorEstimates[12:18] = clip(0.5 * errorEstimates[12:18],-5, 5)   # dX
+\end{lstlisting}
+\begin{itemize}
+  \item \textbf{Half-step ($\times 0.5$):} a relaxed Gauss--Newton step. Because the
+        forward kinematics is nonlinear and $A$ is only a local linearization, a full
+        step can overshoot; damping improves convergence stability.
+  \item \textbf{Clipping ($\pm 5$):} rejects an outlier-driven wild step.
+  \item The capped correction is split into $\Delta Q$ and $\Delta X$; the
+        $\Delta X$ block is sign-flipped to match the model convention (line 620),
+        and the running estimate is the cumulative sum over iterations
+        (\texttt{np.cumsum}, line 638).
+\end{itemize}
+
+\section{Iterative (Gauss--Newton) loop}
+Let $j$ index the iteration and $\hat{\bm{\theta}}_j$ the accumulated estimate.
+Each iteration (\texttt{process\_iteration\_results}, line 600):
+\begin{enumerate}
+  \item Collect $n$ measurements at poses commanded using $\hat{\bm{\theta}}_{j}$
+        (the driver applies $q_{\text{cmd}} - \sum \Delta Q$, etc.).
+  \item Relinearize: form $\bm{b}$ and $A$ at the new operating point
+        (Section~\ref{sec:assembly}).
+  \item Solve $A\,\bm{\theta} \approx \bm{b}$ by SVD least squares.
+  \item Damp ($\times 0.5$), clip ($\pm 5$), and accumulate:
+        $\hat{\bm{\theta}}_{j+1} = \hat{\bm{\theta}}_{j} + 0.5\,\bm{\theta}^{\star}$.
+  \item Repeat for \texttt{numIters} iterations.
+\end{enumerate}
+This is Gauss--Newton applied to the nonlinear least-squares problem
+$\min_{\bm{\theta}} \sum_k \| \bm{m}_k - \bm{f}_k(\bm{\theta}) \|^2$: each step
+linearizes $\bm{f}_k(\bm{\theta}) = \mathrm{FK}_k(\bm{\theta})$, takes a damped
+least-squares correction, and relinearizes, so the accumulated parameters converge
+toward the true $\Delta Q$ and $\Delta X$.
+
+\section*{Summary}
+Linearize $\text{pose} = \mathrm{FK}(\bm{\theta})$ into $A = \partial\,\mathrm{FK}/\partial\bm{\theta}$;
+measure $\bm{b} = \text{pose}_{\text{measured}} - \text{pose}_{\text{predicted}}$;
+stack the per-sample blocks into the $12n \times 12$ system $A$ and the $12n$ vector
+$\bm{b}$ (weighted translation rows then weighted flattened-rotation rows); solve
+$A\bm{\theta}\approx\bm{b}$ by SVD least squares; apply a damped, clipped,
+accumulated step; and iterate.
+
+\paragraph{Implementation note.}
+\texttt{process\_iteration\_results} is called with
+\texttt{(measurements\_actual=targetPoseMeasured, measurements\_expected=targetPoseExpected)}
+(line 600) but internally calls
+\texttt{compute\_differences(measurements\_expected, measurements\_actual)}
+(line 604) --- the actual/expected arguments are swapped at that boundary. The sign
+of $\bm{b}$ must remain consistent with the sign convention of $A$; a flipped $\bm{b}$
+would drive the Gauss--Newton step the wrong way (divergence rather than
+convergence). This is worth verifying.
+
+\end{document}

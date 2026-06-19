@@ -12,41 +12,25 @@ def load_and_process_data(filename):
     # Remove any unnamed columns and clean up
     df = df.dropna(subset=[df.columns[0]])  # Remove rows where first column is NaN
     
+    # Measurements were recorded in cm; convert to mm (x10) so the mm-labeled axes
+    # are correct. Both tape and camera are scaled so the y=x comparison stays valid.
+    CM_TO_MM = 10
+
     # Get tape measure distances (column 1)
-    tape_distances = df.iloc[:, 0].values
-    
+    tape_distances = df.iloc[:, 0].values * CM_TO_MM
+
     # Get camera measurements for each condition
     # 0 deg: columns 1-4, 30 deg: columns 5-8, 60 deg: columns 9-12
-    camera_0deg = 15/14.6*df.iloc[:, 1:5].values
-    camera_30deg = 15/14.6*df.iloc[:, 5:9].values
-    camera_60deg = 15/14.6*df.iloc[:, 9:13].values
-    
+    camera_0deg = CM_TO_MM * 15/14.6*df.iloc[:, 1:5].values
+    camera_30deg = CM_TO_MM * 15/14.6*df.iloc[:, 5:9].values
+    camera_60deg = CM_TO_MM * 15/14.6*df.iloc[:, 9:13].values
+
     return tape_distances, camera_0deg, camera_30deg, camera_60deg
 
-def normalize_to_20mm(data, tape_distances):
-    """Normalize data so that the measurement at 20mm becomes exactly 20mm"""
-    normalized_data = []
-    
-    for condition_data in data:
-        # Find the row corresponding to 20mm measurement
-        idx_20mm = np.where(tape_distances == 20)[0][0]
-        
-        # Calculate the mean measurement at 20mm for this condition
-        mean_at_20mm = np.nanmean(condition_data[idx_20mm, :])
-        
-        # Calculate offset needed to make it exactly 20mm
-        offset = 20 - mean_at_20mm
-        
-        # Apply offset to all measurements in this condition
-        normalized_condition = condition_data + offset
-        normalized_data.append(normalized_condition)
-    
-    return normalized_data
-
-def create_scatter_plot(tape_distances, normalized_data):
+def create_scatter_plot(tape_distances, camera_data):
     """Create scatter plot of tape measure distance vs camera distance with trendline"""
     conditions = ['0°', '30°', '60°']
-    colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
+    colors = ['#9ecae1', '#4292c6', '#08306b'] # Shades of blue: light, medium, dark
     markers = ['o', 's', '^']
     
     fig, ax = plt.subplots(figsize=(9, 7))
@@ -56,9 +40,9 @@ def create_scatter_plot(tape_distances, normalized_data):
     all_camera_distances = []
     
     # X-axis offsets for each condition to separate overlapping points
-    x_offsets = [-0.9, 0, 0.9]  # Left, center, right offsets
+    x_offsets = [-9, 0, 9]  # Left, center, right offsets (mm scale)
     
-    for i, (condition_data, condition_name, color, marker, x_offset) in enumerate(zip(normalized_data, conditions, colors, markers, x_offsets)):
+    for i, (condition_data, condition_name, color, marker, x_offset) in enumerate(zip(camera_data, conditions, colors, markers, x_offsets)):
         condition_tape_distances = []
         condition_camera_distances = []
         condition_x_positions = []
@@ -98,12 +82,12 @@ def create_scatter_plot(tape_distances, normalized_data):
     # Formatting
     ax.set_xlabel('Tape Measure Distance [mm]', fontsize=20)
     ax.set_ylabel('Camera Distance [mm]', fontsize=20)
-    ax.set_title('Camera Distance vs Tape Measure Distance\n(Normalized to 20mm)', fontsize=20)
+    ax.set_title('Camera Distance vs Tape Measure Distance', fontsize=20)
     ax.grid(True, alpha=0.3)
     
     # Set axis limits with some padding
-    ax.set_xlim(min_dist - 2, max_dist + 2)
-    ax.set_ylim(min_dist - 2, max_dist + 2)
+    ax.set_xlim(min_dist - 20, max_dist + 20)
+    ax.set_ylim(min_dist - 20, max_dist + 20)
     
     # Set x-axis ticks to the original tape distances (without offset)
     ax.set_xticks(tape_distances)
@@ -130,17 +114,17 @@ def create_scatter_plot(tape_distances, normalized_data):
     plt.tight_layout()
     return fig, ax
 
-def create_residual_boxplot(tape_distances, normalized_data):
+def create_residual_boxplot(tape_distances, camera_data):
     """Create boxplot of residuals as a function of distance"""
     conditions = ['0°', '30°', '60°']
-    colors = ['#E69F00', '#56B4E9', '#009E73'] # Colorblind-friendly: Orange, Sky Blue, Bluish Green
+    colors = ['#9ecae1', '#4292c6', '#08306b'] # Shades of blue: light, medium, dark
     
     fig, ax = plt.subplots(figsize=(9, 7))
     
     # Calculate residuals for each condition and distance
-    for i, (condition_data, condition_name, color) in enumerate(zip(normalized_data, conditions, colors)):
+    for i, (condition_data, condition_name, color) in enumerate(zip(camera_data, conditions, colors)):
         # Create boxplots for residuals at each distance
-        positions = tape_distances + (i - 1) * 1.2  # Increased offset for better separation
+        positions = tape_distances + (i - 1) * 12  # Increased offset for better separation (mm scale)
         boxplot_data = []
         
         for j, tape_dist in enumerate(tape_distances):
@@ -152,7 +136,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
             boxplot_data.append(residuals)
         
         # Create boxplot with increased width
-        bp = ax.boxplot(boxplot_data, positions=positions, widths=1,
+        bp = ax.boxplot(boxplot_data, positions=positions, widths=10,
                        patch_artist=True, manage_ticks=False,
                        whis=[0, 100],  # Extend whiskers to min/max (0th and 100th percentiles)
                        boxprops=dict(facecolor=color, alpha=0.7, linewidth=1.5),
@@ -188,7 +172,7 @@ def create_residual_boxplot(tape_distances, normalized_data):
     all_residuals = []
     condition_stats = []
     
-    for i, (condition_data, condition_name) in enumerate(zip(normalized_data, conditions)):
+    for i, (condition_data, condition_name) in enumerate(zip(camera_data, conditions)):
         condition_residuals = []
         for j, tape_dist in enumerate(tape_distances):
             camera_measurements = condition_data[j, :]
@@ -223,16 +207,15 @@ def main():
     # Load and process data
     tape_distances, camera_0deg, camera_30deg, camera_60deg = load_and_process_data(filename)
     
-    # Normalize data to start at 20mm
+    # Plot the raw measured values (no normalization)
     camera_data = [camera_0deg, camera_30deg, camera_60deg]
-    normalized_data = normalize_to_20mm(camera_data, tape_distances)
-    
+
     # Create scatter plot
-    fig1, ax1 = create_scatter_plot(tape_distances, normalized_data)
+    fig1, ax1 = create_scatter_plot(tape_distances, camera_data)
     plt.savefig('camera_calibration_scatter_plot.png', dpi=300, bbox_inches='tight')
     
     # Create residual boxplot
-    fig2, ax2 = create_residual_boxplot(tape_distances, normalized_data)
+    fig2, ax2 = create_residual_boxplot(tape_distances, camera_data)
     plt.savefig('camera_calibration_residual_boxplot.png', dpi=300, bbox_inches='tight')
     
     # Print summary statistics
@@ -240,7 +223,7 @@ def main():
     print("=" * 50)
     
     conditions = ['0°', '30°', '60°']
-    for i, (condition_data, condition_name) in enumerate(zip(normalized_data, conditions)):
+    for i, (condition_data, condition_name) in enumerate(zip(camera_data, conditions)):
         all_residuals = []
         for j, tape_dist in enumerate(tape_distances):
             camera_measurements = condition_data[j, :]
@@ -254,7 +237,7 @@ def main():
     
     # Overall statistics
     all_residuals_combined = []
-    for condition_data in normalized_data:
+    for condition_data in camera_data:
         for j, tape_dist in enumerate(tape_distances):
             camera_measurements = condition_data[j, :]
             camera_measurements = camera_measurements[~np.isnan(camera_measurements)]

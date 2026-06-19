@@ -7,6 +7,7 @@ import argparse
 from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Quaternion, Point, Pose
 from geometry_msgs.msg import PoseStamped, PoseArray
+from control_msgs.msg import JointTrajectoryControllerState
 from scipy.spatial.transform import Rotation as R
 from surface_publisher import SurfacePublisher
 from ar4_robot_py import AR4Robot
@@ -88,6 +89,50 @@ class ArucoPoseSubscriber:
         """Latest /aruco_marker_pose as [x,y,z,roll,pitch,yaw], or None."""
         return self._wait_for('_measurement_msg', timeout, require_fresh)
 
+
+class ControllerStateMonitor:
+    """Caches joint_trajectory_controller state so we can report exactly which
+    joint failed to reach its target when a motion fails / times out (-6)."""
+
+    TOPIC = '/joint_trajectory_controller/controller_state'
+
+    def __init__(self, node):
+        self.node = node
+        self._msg = None
+        self._sub = node.create_subscription(
+            JointTrajectoryControllerState, self.TOPIC, self._on_state, 10)
+
+    def _on_state(self, msg):
+        self._msg = msg
+
+    def log_tracking_error(self, label="", target=None, timeout=0.5):
+        """Print a per-joint breakdown of where the robot actually ended up vs.
+        where the trajectory wanted it (and vs. our commanded target)."""
+        # Spin briefly for a fresh controller_state sample.
+        self._msg = None
+        start = time.time()
+        while self._msg is None and (time.time() - start) < timeout:
+            rclpy.spin_once(self.node, timeout_sec=0.01)
+        if self._msg is None:
+            print(f"[DIAG {label}] no controller_state on {self.TOPIC}")
+            return
+        names = list(self._msg.joint_names)
+        err = list(self._msg.error.positions)
+        actual = list(self._msg.feedback.positions)
+        desired = list(self._msg.reference.positions)
+        if not names:
+            names = [f"j{i+1}" for i in range(len(err))]
+        worst = max(range(len(err)), key=lambda i: abs(err[i]))
+        print(f"[DIAG {label}] worst joint: {names[worst]} "
+              f"tracking_err={np.degrees(err[worst]):.1f} deg")
+        for i, n in enumerate(names):
+            tgt = (f"  cmd_target={np.degrees(target[i]):7.1f}"
+                   if target is not None and i < len(target) else "")
+            print(f"    {n}: actual={np.degrees(actual[i]):7.1f}  "
+                  f"desired={np.degrees(desired[i]):7.1f}  "
+                  f"err={np.degrees(err[i]):6.1f} deg{tgt}")
+
+
 def kill_ros2_nodes():
     """Kill specific ROS2 nodes related to MoveIt"""
     nodes_to_kill = [
@@ -161,6 +206,9 @@ def main(args=None):
     # Persistent subscriptions to the aruco pose topics (estimate + camera measurement)
     aruco_poses = ArucoPoseSubscriber(query_node)
 
+    # Diagnostic: caches controller state to report which joint fails on a -6.
+    ctrl_monitor = ControllerStateMonitor(query_node)
+
     frame = "end_effector_link"
     robot = AR4Robot()
     
@@ -168,7 +216,7 @@ def main(args=None):
     marker_publisher = SurfacePublisher()
     
     # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=12, numIters=8, 
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=40, 
                                                dQMagnitude=0.0, dLMagnitude=0.0, 
                                                dXMagnitude=0.0, camera_mode=True)
     simulator.robot = robot
@@ -229,14 +277,35 @@ def main(args=None):
                 joint_positions_est = joint_positions_commanded.copy()
                 joint_positions_est = joint_positions_est - np.sum(simulator.dQMat, axis=0)
                 joint_positions_est[5]= joint_positions_est[5] +np.pi/2
-                motion1Succeeded = robot.move_to_joint_positions(joint_positions_est-0.1)
+                approach_target = joint_positions_est - 0.1
+                # !!! DO NOT raise these toward 1.0 without testing on hardware !!!
+                # These scale the planned move speed/accel. At/near full scaling,
+                # joint 6 (which makes the largest move due to the +pi/2 offset
+                # above) overshoots its target by ~6-12 deg, exceeds the controller
+                # goal tolerance, and the move is ABORTED by move_group with
+                # "error code: -6" (TIMED_OUT). That stalls each measurement ~12 s
+                # and, in the worst case, looks like the robot "freezing". 0.6 was
+                # the empirical sweet spot (0.3 = very safe but slow; 1.0 = frequent
+                # -6). If you change these and start seeing -6 errors, this is why.
+                MOVE_VEL_SCALE = 0.6
+                MOVE_ACC_SCALE = 0.6
+                motion1Succeeded = robot.move_to_joint_positions(
+                    approach_target, MOVE_VEL_SCALE, MOVE_ACC_SCALE)
                 if motion1Succeeded:
-                    motionSucceeded = robot.move_to_joint_positions(joint_positions_est)
+                    motionSucceeded = robot.move_to_joint_positions(
+                        joint_positions_est, MOVE_VEL_SCALE, MOVE_ACC_SCALE)
+                    if not motionSucceeded:
+                        print(f"[MOVE-FAIL] TARGET move failed | "
+                              f"cmd J(deg)={np.round(np.degrees(joint_positions_est), 1)}")
+                        ctrl_monitor.log_tracking_error(
+                            label="target", target=joint_positions_est)
                 else:
-                    if time.time() - lastMotionSuccess > 8:
-                        moveItProcess = restartMoveIt(moveItProcess)
-                        simulator.robot.move_to_home()
-                        lastMotionSuccess = time.time()  # Reset timer after restart
+                    print(f"[MOVE-FAIL] APPROACH move failed | "
+                          f"cmd J(deg)={np.round(np.degrees(approach_target), 1)}")
+                    ctrl_monitor.log_tracking_error(
+                        label="approach", target=approach_target)
+                    # RViz/MoveIt restart disabled for investigation -- just
+                    # re-sample a new pose instead of restarting MoveIt.
                     continue
                 
 
