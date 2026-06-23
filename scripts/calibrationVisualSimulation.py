@@ -30,10 +30,20 @@ def main(args=None):
     robot = AR4Robot()
     robot.disable_logging()
     marker_publisher = SurfacePublisher()
-    # Create simulator with camera mode for visual demonstration
-    simulator = CalibrationConvergenceSimulator(n=8, numIters=6, 
-                                               dQMagnitude=0.1, dLMagnitude=0.01, 
+    # Create simulator with camera mode for visual demonstration.
+    # dLMagnitude=0: link-length errors are disabled so the error model matches the
+    # kinematics. The FK does not include link lengths (the *self.l scaling is
+    # commented out in setup_kinematics), so injected dL errors are
+    # unobservable/uncorrectable and would only add a residual error floor.
+    simulator = CalibrationConvergenceSimulator(n=8, numIters=6,
+                                               dQMagnitude=0.1, dLMagnitude=0.0,
                                                dXMagnitude=0.05, camera_mode=True, noiseMagnitude=0.00, robot = robot)
+    # TEMPORARY: zero the injected z offset. The model pins the base/target z to 0
+    # (originToBase / originToBaseActual use z=0), so a nonzero dX z is unobservable
+    # and only adds a residual error floor. Zeroing it lets the estimate converge to
+    # near zero. Remove these two lines to restore the full 3D dX error.
+    simulator.dX[2] = 0.0
+    simulator.XActual = simulator.XNominal + simulator.dX
     if simulator.camera_mode:
         simulator.targetPosNom, simulator.targetOrientNom = simulator.robot.from_preferred_frame(
             np.array([0.3,0,0]),np.array([np.pi,-np.pi/2,0]))

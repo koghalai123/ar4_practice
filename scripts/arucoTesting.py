@@ -30,7 +30,7 @@ class ArucoPoseEstimator(Node):
         #on the d405 use this:
         self.color_sub = self.create_subscription(
             Image,
-            '/camera/camera/color/image_rect_raw',  # for D435i
+            '/camera/camera/color/image_raw',  # D435-type (publishes image_raw)
             # '/camera/camera/color/image_rect_raw' #for d405
             self.image_callback,
             10)
@@ -70,6 +70,9 @@ class ArucoPoseEstimator(Node):
 
         # ARUCO Setup
         self.MARKER_SIZE_CM = 14.6#* 0.1021
+        # Markers with any corner this close (px) to the image border are ignored:
+        # clipped/edge markers produce unreliable pose estimates.
+        self.EDGE_MARGIN_PX = 5
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_1000)
         self.aruco_params = cv2.aruco.DetectorParameters_create()
 
@@ -207,7 +210,27 @@ class ArucoPoseEstimator(Node):
             cv_image, self.aruco_dict,
             parameters=self.aruco_params
         )
-        
+
+        # Discard markers with any corner within EDGE_MARGIN_PX of the image
+        # border -- they are likely clipped and give bad pose estimates.
+        if ids is not None:
+            img_h, img_w = cv_image.shape[:2]
+            margin = self.EDGE_MARGIN_PX
+            keep = []
+            for k, corner in enumerate(corners):
+                pts = corner.reshape(-1, 2)
+                near_edge = (
+                    (pts[:, 0] < margin).any() or
+                    (pts[:, 1] < margin).any() or
+                    (pts[:, 0] > img_w - 1 - margin).any() or
+                    (pts[:, 1] > img_h - 1 - margin).any()
+                )
+                if not near_edge:
+                    keep.append(k)
+            if len(keep) < len(corners):
+                corners = tuple(corners[k] for k in keep)
+                ids = ids[keep] if keep else None
+
         if ids is not None:
             # Subpixel refinement
             gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
