@@ -86,7 +86,7 @@ def create_scatter_plot(tape_distances, camera_data):
     trendline_y = [slope * x + intercept for x in [min_dist, max_dist]]
     
     ax.plot([min_dist, max_dist], trendline_y, 'purple', linewidth=3, 
-            label=f'Overall Trendline\n(y={slope:.1f}x+{intercept:.1f})')
+            label=f'Overall Trendline\n(y={slope:.2f}x+{intercept:.2f})')
     
     # Formatting
     ax.set_xlabel('Tape Measure Distance [mm]', fontsize=FONT_SIZE)
